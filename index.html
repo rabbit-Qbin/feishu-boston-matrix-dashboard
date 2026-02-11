@@ -119,44 +119,36 @@
     </div>
 
     <script>
-        // 颜色映射（四象限分类：使用表格中的「初步产品分类」字段）
         const colorMap = {
-            '淘汰产品': 'rgba(92, 186, 120, 0.92)',  // 绿色：左下（低需求/低竞争得分=高竞争）
-            '畅销爆品': 'rgba(214, 88, 98, 0.92)',  // 红色：右上（高需求/高竞争得分=低竞争）
-            '潜力产品': 'rgba(255, 193, 7, 0.92)',   // 黄色：左上（低需求/高竞争得分=低竞争）
-            '稳健产品': 'rgba(97, 131, 217, 0.92)', // 蓝色：右下（高需求/低竞争得分=高竞争）
+            '淘汰产品': 'rgba(92, 186, 120, 0.92)',
+            '畅销爆品': 'rgba(214, 88, 98, 0.92)',
+            '潜力产品': 'rgba(255, 193, 7, 0.92)',
+            '稳健产品': 'rgba(97, 131, 217, 0.92)',
             '其他': 'rgba(180, 180, 180, 0.65)'
         };
 
-        // 分类名称标准化映射（处理可能的变体或option_id）
         const categoryAlias = {
-            // 标准四类
             '畅销爆品': '畅销爆品',
             '稳健产品': '稳健产品',
             '潜力产品': '潜力产品',
             '淘汰产品': '淘汰产品',
-            // 可能的变体
             '蓝海爆品': '畅销爆品',
             '潜力蓝海': '潜力产品',
             '观察产品': '稳健产品',
-            // option_id 兜底（如果后端没转换）- 表3的初步产品分类字段的option_id
-            'optLGIU4WF': '畅销爆品',  // 表3初步产品分类
-            'optlDdYN8t': '稳健产品',  // 表3初步产品分类
-            'optNYHmAtG': '潜力产品',  // 表3初步产品分类
-            'optLeC0N1j': '淘汰产品',  // 表3初步产品分类
-            // 旧的option_id（最终产品分类字段的，作为兜底）
+            'optLGIU4WF': '畅销爆品',
+            'optlDdYN8t': '稳健产品',
+            'optNYHmAtG': '潜力产品',
+            'optLeC0N1j': '淘汰产品',
             'optkmQxjzD': '畅销爆品',
             'opt1Tp7Shs': '潜力产品',
             'optkVAQnil': '稳健产品',
             'optRGReDsp': '淘汰产品'
         };
 
-        // 获取分类对应的颜色
         function getCategoryColor(categoryZh) {
             return colorMap[categoryZh] || colorMap['其他'];
         }
 
-        // 十位数取整 + 统计
         function roundDownTo10(value) { return Math.floor(value / 10) * 10; }
         function roundUpTo10(value) { return Math.ceil(value / 10) * 10; }
         function median(values) {
@@ -166,17 +158,9 @@
             return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
         }
 
-        // 坐标轴按数据自适应：向下/向上取整到十位
-        function roundDownTo10(n) {
-            if (!isFinite(n)) return 0;
-            return Math.floor(n / 10) * 10;
-        }
-        function roundUpTo10(n) {
-            if (!isFinite(n)) return 100;
-            return Math.ceil(n / 10) * 10;
-        }
+        function roundDownTo10n(n) { if (!isFinite(n)) return 0; return Math.floor(n / 10) * 10; }
+        function roundUpTo10n(n) { if (!isFinite(n)) return 100; return Math.ceil(n / 10) * 10; }
 
-        // 尝试多个端口
         const PORTS = [8000, 8001, 8002, 8003, 8004];
         let myChart = null;
 
@@ -185,8 +169,6 @@
             const statusText = document.getElementById('status-text');
             statusDiv.innerHTML = '';
             statusText.textContent = '正在加载数据...';
-            
-            // 尝试多个端口
             let lastError = null;
             for (const port of PORTS) {
                 const apiUrl = `http://localhost:${port}/api/table4/scatter-data`;
@@ -194,27 +176,22 @@
                     const response = await fetch(apiUrl);
                     if (response.ok) {
                         const result = await response.json();
-                        console.log('API响应:', result);
                         if (result.code === 0) {
                             if (result.total > 0) {
                                 statusText.textContent = `✓ 成功加载 ${result.total} 条数据 (端口: ${port})`;
                                 statusText.style.color = '#36b37e';
                                 if (result.debug) {
-                                    statusDiv.innerHTML = `<div style="font-size:12px; color:var(--text-sub); margin-top:8px;">
-                                        原始记录: ${result.debug.raw_records} | 跳过: ${result.debug.skipped}
-                                    </div>`;
+                                    statusDiv.innerHTML = `<div style="font-size:12px; color:var(--text-sub); margin-top:8px;">原始记录: ${result.debug.raw_records} | 跳过: ${result.debug.skipped}</div>`;
                                 }
                                 renderChart(result.data);
                             } else {
                                 statusText.textContent = `已连接但无数据 (端口: ${port})`;
                                 statusText.style.color = '#ff991f';
                                 if (result.debug) {
-                                    statusDiv.innerHTML = `<div style="font-size:12px; color:var(--text-sub); margin-top:8px;">
-                                        原始记录: ${result.debug.raw_records} | 跳过: ${result.debug.skipped}
-                                    </div>`;
+                                    statusDiv.innerHTML = `<div style="font-size:12px; color:var(--text-sub); margin-top:8px;">原始记录: ${result.debug.raw_records} | 跳过: ${result.debug.skipped}</div>`;
                                 }
                             }
-                            return; // 成功，退出
+                            return;
                         } else {
                             statusText.textContent = `错误: ${result.msg}`;
                             statusText.style.color = '#de350b';
@@ -223,33 +200,23 @@
                     }
                 } catch (error) {
                     lastError = error;
-                    console.log(`端口 ${port} 连接失败，尝试下一个...`);
-                    continue; // 尝试下一个端口
+                    continue;
                 }
             }
-            
-            // 所有端口都失败
             statusText.textContent = '无法连接到后端服务';
             statusText.style.color = '#de350b';
             statusDiv.innerHTML = `<div class="error">请求失败: 无法连接到后端服务。请确保后端服务正在运行。<br/>尝试的端口: ${PORTS.join(', ')}<br/>最后错误: ${lastError ? lastError.message : '未知错误'}</div>`;
-            console.error('所有端口连接失败:', lastError);
         }
 
         function renderChart(data) {
             const chartDom = document.getElementById('chart');
-            
-            if (myChart) {
-                myChart.dispose();
-            }
-            
+            if (myChart) myChart.dispose();
             myChart = echarts.init(chartDom);
-
-            if (data.length === 0) {
+            if (!data.length) {
                 chartDom.innerHTML = '<div style="text-align: center; padding: 50px; color: var(--text-sub);">暂无数据</div>';
                 return;
             }
 
-            // 计算坐标轴范围（基于实际数据范围，十位数取整）
             const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
             const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
             const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
@@ -257,146 +224,106 @@
             const sizeMax = Math.max(...sizes);
             const sortedSizes = sizes.slice().sort((a, b) => a - b);
             const len = sortedSizes.length;
-            // 利润空间分位数：5 档（20%、40%、60%、80%、100%）
             const q20 = len ? sortedSizes[Math.floor(len * 0.2)] : sizeMin;
-            const q40 = len ? sortedSizes[Math.floor(len * 0.4)] : (sizeMin + sizeMax) * 0.4;
-            const q60 = len ? sortedSizes[Math.floor(len * 0.6)] : (sizeMin + sizeMax) * 0.6;
-            const q80 = len ? sortedSizes[Math.floor(len * 0.8)] : sizeMax;
-            
-            // 计算中位数（用于中轴线）
+            const q40 = len ? sortedSizes[Math.floor(len * 0.4)] : sizeMin + (sizeMax - sizeMin) * 0.4;
+            const q60 = len ? sortedSizes[Math.floor(len * 0.6)] : sizeMin + (sizeMax - sizeMin) * 0.6;
+            const q80 = len ? sortedSizes[Math.floor(len * 0.8)] : sizeMin + (sizeMax - sizeMin) * 0.8;
+            const q90 = len ? sortedSizes[Math.floor(len * 0.9)] : sizeMax;
+
             const xMed = median(xs);
             const yMed = median(ys);
-            
-            // 计算实际数据范围
             const xMinRaw = Math.min(...xs);
             const xMaxRaw = Math.max(...xs);
             const yMinRaw = Math.min(...ys);
             const yMaxRaw = Math.max(...ys);
-            
-            // 坐标轴范围：基于实际数据范围，向下/向上取整到十位数（让数据居中显示）
             const xMin = roundDownTo10(xMinRaw);
             const xMax = roundUpTo10(xMaxRaw);
             const yMin = roundDownTo10(yMinRaw);
             const yMax = roundUpTo10(yMaxRaw);
 
-            // 按表格中的「最初产品分类」字段分组（表格已分类好，直接使用）
+            function getProfitBand(score) {
+                if (!isFinite(score)) return 0;
+                if (score <= q20) return 0;
+                if (score <= q40) return 1;
+                if (score <= q60) return 2;
+                if (score <= q80) return 3;
+                return 4;
+            }
+            function getBandAlpha(band) {
+                const alphas = [0.3, 0.5, 0.7, 0.85, 1.0];
+                return alphas[Math.max(0, Math.min(alphas.length - 1, band))];
+            }
+            function withAlpha(rgba, alpha) {
+                if (typeof rgba !== 'string') return rgba;
+                const m = rgba.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
+                if (!m) return rgba;
+                return `rgba(${m[1]}, ${alpha})`;
+            }
+            function getSizeBand(score) {
+                if (!isFinite(score)) return 0;
+                if (score <= q80) return 0;
+                if (score <= q90) return 1;
+                return 2;
+            }
+
             const categoryMap = {};
             const categoryCounts = { '畅销爆品': 0, '稳健产品': 0, '潜力产品': 0, '淘汰产品': 0 };
-            const unknownCategories = {}; // 记录未知分类，用于调试
-            
+            const unknownCategories = {};
+
             data.forEach(item => {
-                // 直接使用后端返回的category字段（表格里的「最初产品分类」），标准化一下确保是中文名
                 let category = (item.category || '').toString().trim();
-                const originalCategory = category; // 保存原始值用于调试
-                
-                // 标准化分类名（处理可能的变体或option_id）
+                const originalCategory = category;
                 if (categoryAlias[category]) {
                     category = categoryAlias[category];
                 } else if (category) {
-                    // 模糊匹配
                     let matched = false;
                     for (const key in categoryAlias) {
                         if (category.includes(key) || key.includes(category)) {
-                            category = categoryAlias[key];
-                            matched = true;
-                            break;
+                            category = categoryAlias[key]; matched = true; break;
                         }
                     }
-                    // 如果还是没匹配到，记录并强制映射到最接近的分类
                     if (!matched) {
                         unknownCategories[originalCategory] = (unknownCategories[originalCategory] || 0) + 1;
-                        // 根据关键词强制映射
-                        if (category.includes('畅销') || category.includes('爆品')) {
-                            category = '畅销爆品';
-                        } else if (category.includes('稳健') || category.includes('稳定')) {
-                            category = '稳健产品';
-                        } else if (category.includes('潜力') || category.includes('潜力')) {
-                            category = '潜力产品';
-                        } else if (category.includes('淘汰') || category.includes('淘汰')) {
-                            category = '淘汰产品';
-                        } else {
-                            // 如果完全无法识别，根据坐标位置判断（兜底方案）
-                            const x = item.x;
-                            const y = item.y;
-                            const right = x >= xMed;
-                            const top = y >= yMed;
-                            if (right && top) category = '畅销爆品';
-                            else if (!right && top) category = '潜力产品';
-                            else if (right && !top) category = '稳健产品';
-                            else category = '淘汰产品';
-                        }
+                        const x = item.x, y = item.y;
+                        const right = x >= xMed, top = y >= yMed;
+                        if (right && top) category = '畅销爆品';
+                        else if (!right && top) category = '潜力产品';
+                        else if (right && !top) category = '稳健产品';
+                        else category = '淘汰产品';
                     }
                 } else {
-                    // 如果category为空，根据坐标位置判断（兜底方案）
-                    const x = item.x;
-                    const y = item.y;
-                    const right = x >= xMed;
-                    const top = y >= yMed;
+                    const x = item.x, y = item.y;
+                    const right = x >= xMed, top = y >= yMed;
                     if (right && top) category = '畅销爆品';
                     else if (!right && top) category = '潜力产品';
                     else if (right && !top) category = '稳健产品';
                     else category = '淘汰产品';
                 }
-                
                 categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-                
-                if (!categoryMap[category]) {
-                    categoryMap[category] = [];
-                }
+                if (!categoryMap[category]) categoryMap[category] = [];
                 categoryMap[category].push([
-                    item.x,      // X轴：需求趋势得分
-                    item.y,      // Y轴：竞争强度得分
-                    item.size,   // 气泡大小：利润空间得分
-                    item.title,  // 悬停提示
-                    item.asin,
-                    category
+                    item.x, item.y, item.size, item.title, item.asin, category
                 ]);
             });
 
-            // 固定四类顺序，避免图例乱跳（只有四个分类，不要"其他"）
             const CATEGORY_ORDER = ['畅销爆品', '稳健产品', '潜力产品', '淘汰产品'];
-
             const series = CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0).map(category => {
-                const categoryColor = getCategoryColor(category);
-                console.log(`分类: ${category}, 颜色: ${categoryColor}, 数量: ${categoryMap[category].length}`);
-                
                 return {
                     name: category,
                     type: 'scatter',
                     data: categoryMap[category],
                     symbolSize: (data) => {
                         const profitScore = data[2];
-                        if (!isFinite(profitScore) || !isFinite(sizeMin) || !isFinite(sizeMax)) {
-                            return 12;
-                        }
-
-                        const band = (function(score) {
-                            if (!isFinite(score)) return 0;
-                            if (score <= q20) return 0;
-                            if (score <= q40) return 1;
-                            if (score <= q60) return 2;
-                            if (score <= q80) return 3;
-                            return 4;
-                        })(profitScore);
-
+                        if (!isFinite(profitScore) || !isFinite(sizeMin) || !isFinite(sizeMax)) return 12;
+                        const sizeBand = getSizeBand(profitScore);
                         let base, span, bandMin, bandMax;
-                        if (band === 0) {          // 最低20%
-                            base = 8;  span = 4;
-                            bandMin = sizeMin; bandMax = q20;
-                        } else if (band === 1) {   // 20%~40%
-                            base = 14; span = 6;
-                            bandMin = q20; bandMax = q40;
-                        } else if (band === 2) {   // 40%~60%
-                            base = 20; span = 8;
-                            bandMin = q40; bandMax = q60;
-                        } else if (band === 3) {   // 60%~80%
-                            base = 30; span = 10;
-                            bandMin = q60; bandMax = q80;
-                        } else {                   // 最高20%
-                            base = 46; span = 14;
-                            bandMin = q80; bandMax = sizeMax;
+                        if (sizeBand === 0) {
+                            base = 16; span = 6; bandMin = sizeMin; bandMax = q80;
+                        } else if (sizeBand === 1) {
+                            base = 28; span = 8; bandMin = q80; bandMax = q90;
+                        } else {
+                            base = 46; span = 14; bandMin = q90; bandMax = sizeMax;
                         }
-
                         const range = (bandMax - bandMin) || 1;
                         const t = Math.max(0, Math.min(1, (profitScore - bandMin) / range));
                         const size = base + (t - 0.5) * span;
@@ -406,20 +333,10 @@
                         color: (params) => {
                             const v = params.value;
                             const profitScore = v[2];
-                            const band = (function(score) {
-                                if (!isFinite(score)) return 0;
-                                if (score <= q20) return 0;
-                                if (score <= q40) return 1;
-                                if (score <= q60) return 2;
-                                if (score <= q80) return 3;
-                                return 4;
-                            })(profitScore);
-                            const alphas = [0.3, 0.5, 0.7, 0.85, 1.0];
-                            const alpha = alphas[Math.max(0, Math.min(alphas.length - 1, band))];
+                            const band = getProfitBand(profitScore);
+                            const alpha = getBandAlpha(band);
                             const baseColor = getCategoryColor(v[5] || category);
-                            const m = typeof baseColor === 'string' && baseColor.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
-                            if (!m) return baseColor;
-                            return `rgba(${m[1]}, ${alpha})`;
+                            return withAlpha(baseColor, alpha);
                         },
                         shadowBlur: 1,
                         shadowColor: 'rgba(0,0,0,0.08)',
@@ -431,20 +348,10 @@
                             color: (params) => {
                                 const v = params.value;
                                 const profitScore = v[2];
-                                const band = (function(score) {
-                                    if (!isFinite(score)) return 0;
-                                    if (score <= q20) return 0;
-                                    if (score <= q40) return 1;
-                                    if (score <= q60) return 2;
-                                    if (score <= q80) return 3;
-                                    return 4;
-                                })(score);
-                                const alphas = [0.3, 0.5, 0.7, 0.85, 1.0];
-                                const alpha = Math.min(1, alphas[Math.max(0, Math.min(alphas.length - 1, band))] + 0.15);
+                                const band = getProfitBand(profitScore);
+                                const alpha = Math.min(1, getBandAlpha(band) + 0.15);
                                 const baseColor = getCategoryColor(v[5] || category);
-                                const m = typeof baseColor === 'string' && baseColor.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
-                                if (!m) return baseColor;
-                                return `rgba(${m[1]}, ${alpha})`;
+                                return withAlpha(baseColor, alpha);
                             },
                             shadowBlur: 8,
                             shadowColor: 'rgba(0,0,0,0.25)',
@@ -457,108 +364,63 @@
 
             const pct = (n) => data.length ? `${(n * 100 / data.length).toFixed(1)}%` : '0.0%';
 
-            console.log('坐标轴范围:', { xMin, xMax, yMin, yMax });
-            console.log('利润空间分位数:', { sizeMin, q20, q40, q60, q80, sizeMax });
-
             const option = {
-                grid: {
-                    left: '40',
-                    right: '40',
-                    top: '70',
-                    bottom: '60',
-                    containLabel: true
-                },
+                grid: { left: '40', right: '40', top: '70', bottom: '60', containLabel: true },
                 title: {
                     text: '产品分类四象限（需求趋势 × 竞争强度）',
-                    left: 'center',
-                    top: 20,
-                    textStyle: {
-                        fontSize: 16,
-                        fontWeight: 600,
-                        color: '#172b4d'
+                    left: 'center', top: 20,
+                    textStyle: { fontSize: 16, fontWeight: 600, color: '#172b4d' }
+                },
+                tooltip: {
+                    padding: 10,
+                    backgroundColor: 'rgba(255,255,255,0.95)',
+                    borderColor: '#dfe1e6', borderWidth: 1,
+                    textStyle: { color: '#172b4d', fontSize: 13 },
+                    formatter: (params) => {
+                        const v = params.value;
+                        const title = (v[3] || '未知').length > 60 ? (v[3].substring(0, 60) + '...') : (v[3] || '未知');
+                        const categoryZh = v[5] || '其他';
+                        return `<div style="line-height: 1.8;">
+  <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d;">${title}</div>
+  <div style="color: #5e6c84; font-size: 12px;">
+    <div>ASIN: <span style="color: #172b4d;">${v[4] || 'N/A'}</span></div>
+    <div>需求趋势: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(1)}</span></div>
+    <div>竞争强度: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(1)}</span></div>
+    <div>利润空间: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(1)}</span></div>
+    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #dfe1e6;">分类: <span style="color: ${getCategoryColor(categoryZh) || '#5e6c84'}; font-weight: 600;">${categoryZh}</span></div>
+  </div>
+</div>`;
                     }
                 },
                 xAxis: {
-                    type: 'value',
-                    name: '需求趋势得分',
-                    nameGap: 35,
-                    nameLocation: 'middle',
-                    nameTextStyle: {
-                        fontSize: 13,
-                        color: '#5e6c84',
-                        fontWeight: 500
-                    },
-                    min: xMin,
-                    max: xMax,
-                    splitLine: {
-                        show: true,
-                        lineStyle: {
-                            type: 'dashed',
-                            color: '#e8e8e8',
-                            width: 1
-                        }
-                    },
-                    axisLine: {
-                        lineStyle: {
-                            color: '#888'
-                        }
-                    },
-                    axisLabel: {
-                        color: '#5e6c84',
-                        fontSize: 12
-                    }
+                    type: 'value', name: '需求趋势得分', nameGap: 35, nameLocation: 'middle',
+                    nameTextStyle: { fontSize: 13, color: '#5e6c84', fontWeight: 500 },
+                    min: xMin, max: xMax,
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e8e8e8', width: 1 } },
+                    axisLine: { lineStyle: { color: '#888' } },
+                    axisLabel: { color: '#5e6c84', fontSize: 12 }
                 },
                 yAxis: {
-                    type: 'value',
-                    name: '竞争强度得分',
-                    nameGap: 35,
-                    nameLocation: 'middle',
-                    nameTextStyle: {
-                        fontSize: 13,
-                        color: '#5e6c84',
-                        fontWeight: 500
-                    },
-                    min: yMin,
-                    max: yMax,
-                    splitLine: {
-                        show: true,
-                        lineStyle: {
-                            type: 'dashed',
-                            color: '#e8e8e8',
-                            width: 1
-                        }
-                    },
-                    axisLine: {
-                        lineStyle: {
-                            color: '#888'
-                        }
-                    },
-                    axisLabel: {
-                        color: '#5e6c84',
-                        fontSize: 12
-                    }
+                    type: 'value', name: '竞争强度得分', nameGap: 35, nameLocation: 'middle',
+                    nameTextStyle: { fontSize: 13, color: '#5e6c84', fontWeight: 500 },
+                    min: yMin, max: yMax,
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e8e8e8', width: 1 } },
+                    axisLine: { lineStyle: { color: '#888' } },
+                    axisLabel: { color: '#5e6c84', fontSize: 12 }
                 },
                 graphic: [
                     {
-                        type: 'group',
-                        left: '90',
-                        top: '55',
+                        type: 'group', left: '70', top: '60',
                         children: [
                             {
-                                type: 'rect',
-                                shape: { width: 230, height: 140, r: 6 },
+                                type: 'rect', shape: { width: 210, height: 140, r: 6 },
                                 style: {
-                                    fill: 'rgba(255,255,255,0.88)',
-                                    stroke: '#dfe1e6',
-                                    lineWidth: 1,
-                                    shadowBlur: 10,
-                                    shadowColor: 'rgba(0,0,0,0.08)'
+                                    fill: 'rgba(255,255,255,0.88)', stroke: '#dfe1e6', lineWidth: 1,
+                                    shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.08)'
                                 }
                             },
                             {
-                                type: 'text',
-                                left: 10,
-                                top: 10,
+                                type: 'text', left: 10, top: 10,
                                 style: {
                                     text:`总产品：${data.length}
 分界线：需求趋势=${xMed.toFixed(1)}，竞争强度=${yMed.toFixed(1)}
@@ -568,10 +430,7 @@
 稳健产品：${categoryCounts['稳健产品']}（${pct(categoryCounts['稳健产品'])}）
 潜力产品：${categoryCounts['潜力产品']}（${pct(categoryCounts['潜力产品'])}）
 淘汰产品：${categoryCounts['淘汰产品']}（${pct(categoryCounts['淘汰产品'])}）`,
-                                    fill: '#172b4d',
-                                    font: '10px Inter, sans-serif',
-                                    lineHeight: 16,
-                                    opacity: 0.95
+                                    fill: '#172b4d', font: '10px Inter, sans-serif', lineHeight: 16, opacity: 0.95
                                 }
                             }
                         ]
@@ -579,31 +438,15 @@
                 ],
                 legend: {
                     data: CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0),
-                    bottom: 10,
-                    icon: 'circle',
-                    itemWidth: 10,
-                    itemHeight: 10,
-                    itemGap: 20,
-                    textStyle: {
-                        fontSize: 12,
-                        color: '#5e6c84'
-                    },
-                    formatter: (name) => {
-                        const cnt = (categoryCounts && categoryCounts[name]) ? categoryCounts[name] : 0;
-                        return `${name} (${cnt})`;
-                    }
+                    bottom: 10, icon: 'circle', itemWidth: 10, itemHeight: 10, itemGap: 20,
+                    textStyle: { fontSize: 12, color: '#5e6c84' },
+                    formatter: (name) => `${name} (${(categoryCounts && categoryCounts[name]) ? categoryCounts[name] : 0})`
                 },
                 series: [
                     {
-                        name: '__areas__',
-                        type: 'scatter',
-                        data: [],
-                        silent: true,
-                        tooltip: { show: false },
-                        z: 0,
+                        name: '__areas__', type: 'scatter', data: [], silent: true, tooltip: { show: false }, z: 0,
                         markArea: {
-                            silent: true,
-                            itemStyle: { opacity: 0.14 },
+                            silent: true, itemStyle: { opacity: 0.14 },
                             data: [
                                 [ { xAxis: xMin, yAxis: yMax, itemStyle: { color: 'rgba(255, 193, 7, 0.30)' } }, { xAxis: xMed, yAxis: yMed } ],
                                 [ { xAxis: xMed, yAxis: yMax, itemStyle: { color: 'rgba(214, 88, 98, 0.30)' } }, { xAxis: xMax, yAxis: yMed } ],
@@ -614,39 +457,22 @@
                     },
                     ...series,
                     {
-                        name: '__median__',
-                        type: 'scatter',
-                        data: [],
-                        silent: true,
-                        tooltip: { show: false },
+                        name: '__median__', type: 'scatter', data: [], silent: true, tooltip: { show: false },
                         markLine: {
-                            silent: true,
-                            symbol: ['none', 'none'],
-                            lineStyle: {
-                                color: '#666',
-                                type: 'dashed',
-                                width: 1.5,
-                                opacity: 0.7
-                            },
-                            label: { show: false },
-                            data: [{ xAxis: xMed }, { yAxis: yMed }]
+                            silent: true, symbol: ['none', 'none'],
+                            lineStyle: { color: '#666', type: 'dashed', width: 1.5, opacity: 0.7 },
+                            label: { show: false }, data: [{ xAxis: xMed }, { yAxis: yMed }]
                         },
-                        z: 999,
-                        zlevel: 10
+                        z: 999, zlevel: 10
                     }
                 ]
             };
 
             myChart.setOption(option);
-
-            window.addEventListener('resize', () => {
-                myChart.resize();
-            });
+            window.addEventListener('resize', () => myChart.resize());
         }
 
-        window.onload = function() {
-            loadData();
-        };
+        window.onload = function() { loadData(); };
     </script>
 </body>
 </html>
