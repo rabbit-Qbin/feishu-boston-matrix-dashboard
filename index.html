@@ -252,6 +252,9 @@
             // 计算坐标轴范围（基于实际数据范围，十位数取整）
             const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
             const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
+            const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
+            const sizeMin = Math.min(...sizes);
+            const sizeMax = Math.max(...sizes);
             
             // 计算中位数（用于中轴线）
             const xMed = median(xs);
@@ -295,15 +298,26 @@
                     // 如果还是没匹配到，记录并强制映射到最接近的分类
                     if (!matched) {
                         unknownCategories[originalCategory] = (unknownCategories[originalCategory] || 0) + 1;
-                        // 如果完全无法识别，根据坐标位置判断（兜底方案）
-                        const x = item.x;
-                        const y = item.y;
-                        const right = x >= xMed;
-                        const top = y >= yMed;
-                        if (right && top) category = '畅销爆品';
-                        else if (!right && top) category = '潜力产品';
-                        else if (right && !top) category = '稳健产品';
-                        else category = '淘汰产品';
+                        // 根据关键词强制映射
+                        if (category.includes('畅销') || category.includes('爆品')) {
+                            category = '畅销爆品';
+                        } else if (category.includes('稳健') || category.includes('稳定')) {
+                            category = '稳健产品';
+                        } else if (category.includes('潜力') || category.includes('潜力')) {
+                            category = '潜力产品';
+                        } else if (category.includes('淘汰') || category.includes('淘汰')) {
+                            category = '淘汰产品';
+                        } else {
+                            // 如果完全无法识别，根据坐标位置判断（兜底方案）
+                            const x = item.x;
+                            const y = item.y;
+                            const right = x >= xMed;
+                            const top = y >= yMed;
+                            if (right && top) category = '畅销爆品';
+                            else if (!right && top) category = '潜力产品';
+                            else if (right && !top) category = '稳健产品';
+                            else category = '淘汰产品';
+                        }
                     }
                 } else {
                     // 如果category为空，根据坐标位置判断（兜底方案）
@@ -337,16 +351,24 @@
 
             const series = CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0).map(category => {
                 const categoryColor = getCategoryColor(category);
+                console.log(`分类: ${category}, 颜色: ${categoryColor}, 数量: ${categoryMap[category].length}`);
+                
                 return {
                     name: category,
                     type: 'scatter',
                     data: categoryMap[category],
                     symbolSize: (data) => {
+                        // data 是数组 [x, y, size, title, asin, category]
                         const profitScore = data[2];
-                        return Math.max(5, Math.min(20, 5 + (profitScore / 100) * 15));
+                        // 根据当前数据集的利润空间得分做标准化 + 加权放大
+                        const tRaw = (profitScore - sizeMin) / ((sizeMax - sizeMin) || 1); // 0~1
+                        const t = Math.max(0, Math.min(1, tRaw));
+                        const weighted = Math.pow(t, 1.5); // 高利润的点放大得更明显
+                        // 基础半径 6，高利润最大放大到约 26，既有层次又避免过度遮挡
+                        return 6 + weighted * 20;
                     },
                     itemStyle: {
-                        color: categoryColor,
+                        color: categoryColor,  // 系列颜色 - 关键！
                         shadowBlur: 1,
                         shadowColor: 'rgba(0,0,0,0.08)',
                         borderColor: '#fff',
@@ -354,7 +376,7 @@
                     },
                     emphasis: {
                         itemStyle: {
-                            color: categoryColor,
+                            color: categoryColor,  // 悬停时保持颜色
                             shadowBlur: 6,
                             shadowColor: 'rgba(0,0,0,0.15)',
                             borderWidth: 2,
