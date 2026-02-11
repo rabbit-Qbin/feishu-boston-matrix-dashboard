@@ -255,6 +255,11 @@
             const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
             const sizeMin = Math.min(...sizes);
             const sizeMax = Math.max(...sizes);
+            const sortedSizes = sizes.slice().sort((a, b) => a - b);
+            const len = sortedSizes.length;
+            const q1 = len ? sortedSizes[Math.floor(len * 0.25)] : sizeMin;
+            const q2 = len ? sortedSizes[Math.floor(len * 0.5)] : (sizeMin + sizeMax) / 2;
+            const q3 = len ? sortedSizes[Math.floor(len * 0.75)] : sizeMax;
             
             // 计算中位数（用于中轴线）
             const xMed = median(xs);
@@ -360,13 +365,12 @@
                     symbolSize: (data) => {
                         // data 是数组 [x, y, size, title, asin, category]
                         const profitScore = data[2];
-                        // 根据当前数据集的利润空间得分做标准化 + 更强的加权放大
-                        const tRaw = (profitScore - sizeMin) / ((sizeMax - sizeMin) || 1); // 0~1
-                        const t = Math.max(0, Math.min(1, tRaw));
-                        // 指数放大：高利润点更大、低利润点更小
-                        const weighted = Math.pow(t, 2); 
-                        // 半径范围加大：最低约 4，最高约 36
-                        return 4 + weighted * 32;
+                        // 按利润空间分位数分 4 档，让大小差异更「阶梯化」而不是连续
+                        if (!isFinite(profitScore)) return 6;
+                        if (profitScore <= q1) return 6;      // 低利润
+                        if (profitScore <= q2) return 10;     // 中等
+                        if (profitScore <= q3) return 18;     // 高利润
+                        return 28;                             // 最高利润
                     },
                     itemStyle: {
                         color: categoryColor,  // 系列颜色 - 关键！
