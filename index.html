@@ -342,7 +342,7 @@
                     item.size,   // 气泡大小：利润空间得分
                     item.title,  // 悬停提示
                     item.asin,
-                    category
+                    category  // 表格中的分类（标准化后的中文名）
                 ]);
             });
 
@@ -360,12 +360,13 @@
                     symbolSize: (data) => {
                         // data 是数组 [x, y, size, title, asin, category]
                         const profitScore = data[2];
-                        // 根据当前数据集的利润空间得分做标准化 + 加权放大
+                        // 根据当前数据集的利润空间得分做标准化 + 更强的加权放大
                         const tRaw = (profitScore - sizeMin) / ((sizeMax - sizeMin) || 1); // 0~1
                         const t = Math.max(0, Math.min(1, tRaw));
-                        const weighted = Math.pow(t, 1.5); // 高利润的点放大得更明显
-                        // 基础半径 6，高利润最大放大到约 26，既有层次又避免过度遮挡
-                        return 6 + weighted * 20;
+                        // 指数放大：高利润点更大、低利润点更小
+                        const weighted = Math.pow(t, 2); 
+                        // 半径范围加大：最低约 4，最高约 36
+                        return 4 + weighted * 32;
                     },
                     itemStyle: {
                         color: categoryColor,  // 系列颜色 - 关键！
@@ -420,6 +421,7 @@
                         const title = (v[3] || '未知').length > 60 
                             ? (v[3].substring(0, 60) + '...') 
                             : (v[3] || '未知');
+                        // v[5] 已经是通过 classifyQuadrant 计算出的四象限分类（畅销爆品/稳健产品/潜力产品/淘汰产品）
                         const categoryZh = v[5] || '其他';
                         return `
                             <div style="line-height: 1.8;">
