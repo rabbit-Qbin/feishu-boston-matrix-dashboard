@@ -365,12 +365,49 @@
                     symbolSize: (data) => {
                         // data 是数组 [x, y, size, title, asin, category]
                         const profitScore = data[2];
-                        // 按利润空间分位数分 4 档，让大小差异更「阶梯化」而不是连续
-                        if (!isFinite(profitScore)) return 6;
-                        if (profitScore <= q1) return 6;      // 低利润
-                        if (profitScore <= q2) return 10;     // 中等
-                        if (profitScore <= q3) return 18;     // 高利润
-                        return 28;                             // 最高利润
+                        if (!isFinite(profitScore) || !isFinite(sizeMin) || !isFinite(sizeMax)) {
+                            return 10;
+                        }
+
+                        // 先按利润空间分位数划 4 档：决定“整体档位差异”
+                        // 再在每一档内按具体分数做细微区分：同一档里高分稍大、低分稍小
+                        let base = 8;      // 基础半径（该档中等利润的大小）
+                        let span = 4;      // 档内可上下浮动的范围
+                        let bandMin = sizeMin;
+                        let bandMax = sizeMax;
+
+                        if (profitScore <= q1) {
+                            // 低利润：整体偏小
+                            base = 8;
+                            span = 4;
+                            bandMin = sizeMin;
+                            bandMax = q1;
+                        } else if (profitScore <= q2) {
+                            // 中等：明显大一档
+                            base = 14;
+                            span = 6;
+                            bandMin = q1;
+                            bandMax = q2;
+                        } else if (profitScore <= q3) {
+                            // 较高利润：再大一档
+                            base = 22;
+                            span = 8;
+                            bandMin = q2;
+                            bandMax = q3;
+                        } else {
+                            // 最高 25%：最大一档，视觉上要“冲出来”
+                            base = 32;
+                            span = 10;
+                            bandMin = q3;
+                            bandMax = sizeMax;
+                        }
+
+                        const range = (bandMax - bandMin) || 1;
+                        const t = Math.max(0, Math.min(1, (profitScore - bandMin) / range)); // 档内0~1
+                        // 档内围绕 base 上下浮动一圈，让同一档也能按分数有细微差异
+                        const size = base + (t - 0.5) * span;
+                        // 整体半径控制在合理范围内，避免过小或过大
+                        return Math.max(5, Math.min(40, size));
                     },
                     itemStyle: {
                         color: categoryColor,  // 系列颜色 - 关键！
