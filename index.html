@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品分类四象限（波士顿矩阵）</title>
-    <!-- 飞书 Base JS SDK -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk/bitable.js"></script>
     <!-- ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -1004,14 +1002,17 @@
         }
 
         // 飞书插件初始化
-        // 按照官方模板的方式：检查 dashboard 对象和状态
         async function initPlugin() {
+            const statusDiv = document.getElementById('status');
             const statusText = document.getElementById('status-text');
             
             try {
-                // 等待 SDK 加载（最多等待 3 秒）
+                // 等待 SDK 加载（最多等待 10 秒，飞书环境可能需要更长时间）
                 let retryCount = 0;
-                const maxRetries = 30; // 3秒，每100ms检查一次
+                const maxRetries = 100; // 10秒，每100ms检查一次
+                
+                statusText.textContent = '等待飞书环境初始化...';
+                statusText.style.color = '#5e6c84';
                 
                 while (retryCount < maxRetries) {
                     if (typeof bitable !== 'undefined' && bitable.base) {
@@ -1020,26 +1021,74 @@
                     await new Promise(resolve => setTimeout(resolve, 100));
                     retryCount++;
                     if (retryCount % 10 === 0) {
-                        statusText.textContent = `等待 SDK 加载... (${retryCount * 100}ms)`;
+                        statusText.textContent = `等待飞书环境初始化... (${retryCount * 100}ms)`;
+                        console.log(`等待 SDK 加载... (${retryCount * 100}ms)`);
+                        console.log('当前 bitable 状态:', typeof bitable);
+                        if (typeof bitable !== 'undefined') {
+                            console.log('bitable.base 状态:', bitable.base);
+                        }
                     }
                 }
                 
-                // 检查 bitable 和 dashboard 是否已加载
+                // 检查 bitable 是否已加载
                 if (typeof bitable === 'undefined') {
-                    statusText.textContent = '错误：Base JS SDK 未加载，请检查网络连接';
+                    statusText.textContent = '错误：Base JS SDK 未加载';
                     statusText.style.color = '#de350b';
+                    statusDiv.innerHTML = `
+                        <div class="error">
+                            <strong>错误：Base JS SDK 未加载</strong><br/>
+                            <br/>
+                            <strong>可能原因：</strong><br/>
+                            1. 当前不在飞书插件环境中运行<br/>
+                            2. 飞书环境初始化失败<br/>
+                            3. 网络连接问题<br/>
+                            <br/>
+                            <strong>调试信息：</strong><br/>
+                            - 等待时间: ${retryCount * 100}ms<br/>
+                            - window.bitable: ${typeof bitable}<br/>
+                            - URL: ${window.location.href}<br/>
+                            <br/>
+                            <strong>解决方案：</strong><br/>
+                            1. 确认在飞书多维表格的"仪表盘"中打开插件<br/>
+                            2. 检查插件 URL 是否正确（必须是 HTTPS）<br/>
+                            3. 尝试刷新页面<br/>
+                            4. 检查浏览器控制台是否有其他错误
+                        </div>
+                    `;
                     console.error('Base JS SDK 未加载');
+                    console.error('环境信息:', {
+                        bitable: typeof bitable,
+                        location: window.location.href,
+                        userAgent: navigator.userAgent
+                    });
                     return;
                 }
                 
                 if (!bitable.base) {
-                    statusText.textContent = '错误：bitable.base 不可用，请确保在飞书 Dashboard 插件环境中运行';
+                    statusText.textContent = '错误：bitable.base 不可用';
                     statusText.style.color = '#de350b';
+                    statusDiv.innerHTML = `
+                        <div class="error">
+                            <strong>错误：bitable.base 不可用</strong><br/>
+                            <br/>
+                            <strong>调试信息：</strong><br/>
+                            - bitable 对象存在: 是<br/>
+                            - bitable.base: ${bitable.base}<br/>
+                            - bitable 属性: ${Object.keys(bitable).join(', ')}<br/>
+                            <br/>
+                            <strong>请确保：</strong><br/>
+                            1. 在飞书多维表格的"仪表盘"中运行插件<br/>
+                            2. 已选择正确的数据表<br/>
+                            3. 插件 URL 使用 HTTPS 协议
+                        </div>
+                    `;
                     console.error('bitable.base 不可用');
+                    console.error('bitable 对象:', bitable);
                     return;
                 }
                 
                 console.log('✓ Base JS SDK 已加载');
+                console.log('bitable 对象:', bitable);
                 statusText.textContent = 'SDK 已加载，开始获取数据...';
                 
                 // 检查 dashboard 对象（可能直接可用，也可能在 bitable 下）
@@ -1068,6 +1117,12 @@
                     console.log('插件处于创建状态');
                     statusText.textContent = '请完成插件配置';
                     statusText.style.color = '#ff991f';
+                    statusDiv.innerHTML = `
+                        <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
+                            <strong>请配置插件</strong><br/>
+                            插件当前处于创建/配置状态，请完成配置后查看数据
+                        </div>
+                    `;
                     return;
                 }
                 
@@ -1079,6 +1134,15 @@
                 console.error('插件初始化失败:', error);
                 statusText.textContent = `初始化失败: ${error.message}`;
                 statusText.style.color = '#de350b';
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>插件初始化失败</strong><br/>
+                        ${error.message}<br/>
+                        <br/>
+                        <strong>错误详情：</strong><br/>
+                        <pre>${error.stack || '无堆栈信息'}</pre>
+                    </div>
+                `;
                 // 如果出错，尝试直接加载数据
                 setTimeout(() => {
                     console.log('尝试直接加载数据...');
