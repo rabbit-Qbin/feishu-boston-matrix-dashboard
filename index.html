@@ -855,23 +855,45 @@
         }
 
         // 飞书插件初始化
-        // 简化版本：直接检查 bitable.base 是否存在，存在就加载数据
-        function initPlugin() {
-            // 检查 bitable 是否已加载
-            if (typeof bitable !== 'undefined' && bitable.base) {
-                console.log('Base JS SDK 已加载');
+        // 按照官方模板的方式：检查 dashboard 对象和状态
+        async function initPlugin() {
+            try {
+                // 检查 bitable 和 dashboard 是否已加载
+                if (typeof bitable === 'undefined' || !bitable.base) {
+                    console.warn('Base JS SDK 未加载');
+                    return;
+                }
+                
+                // 检查 dashboard 对象（可能直接可用，也可能在 bitable 下）
+                const dashboard = window.dashboard || bitable.dashboard;
+                
+                if (!dashboard) {
+                    // 如果没有 dashboard，直接加载数据（展示状态）
+                    console.log('Dashboard API 不可用，直接加载数据');
+                    loadData();
+                    return;
+                }
+                
+                // 检查插件状态
+                const state = dashboard.state;
+                console.log('插件状态:', state);
+                
+                // 如果是创建状态，不加载数据
+                if (state === 'create') {
+                    console.log('插件处于创建状态');
+                    document.getElementById('status-text').textContent = '请完成插件配置';
+                    document.getElementById('status-text').style.color = '#ff991f';
+                    return;
+                }
+                
+                // 其他状态（display/config）都加载数据
+                console.log('开始加载数据');
                 loadData();
-            } else {
-                // SDK 可能还在加载，延迟重试
-                setTimeout(() => {
-                    if (typeof bitable !== 'undefined' && bitable.base) {
-                        console.log('Base JS SDK 已加载（延迟）');
-                        loadData();
-                    } else {
-                        console.warn('Base JS SDK 未加载，可能不在飞书环境中');
-                        // 不显示错误，静默处理
-                    }
-                }, 500);
+                
+            } catch (error) {
+                console.error('插件初始化失败:', error);
+                // 如果出错，尝试直接加载数据
+                loadData();
             }
         }
         
