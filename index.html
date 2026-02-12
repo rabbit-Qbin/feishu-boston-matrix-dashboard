@@ -855,26 +855,56 @@
         }
 
         // 飞书插件初始化
-        // 等待 SDK 加载完成后再初始化
-        window.addEventListener('load', () => {
-            // 检查 bitable 是否已加载
-            if (typeof bitable !== 'undefined' && bitable.base) {
-                console.log('Base JS SDK 已加载');
-                loadData();
-            } else {
-                // 如果 SDK 还没加载，等待一下再试
-                setTimeout(() => {
-                    if (typeof bitable !== 'undefined' && bitable.base) {
-                        console.log('Base JS SDK 已加载（延迟）');
-                        loadData();
-                    } else {
-                        console.error('Base JS SDK 未加载');
-                        document.getElementById('status-text').textContent = '请在飞书插件环境中运行';
-                        document.getElementById('status-text').style.color = '#ff991f';
-                    }
-                }, 500);
+        // 根据文档，Dashboard 插件需要检查状态，只在展示状态下加载数据
+        async function initPlugin() {
+            try {
+                // 检查 bitable 是否已加载
+                if (typeof bitable === 'undefined' || !bitable.base) {
+                    throw new Error('Base JS SDK 未加载');
+                }
+                
+                // 获取插件状态（Dashboard 插件状态）
+                const dashboard = bitable.dashboard;
+                if (!dashboard) {
+                    throw new Error('Dashboard API 不可用');
+                }
+                
+                // 获取当前插件状态
+                const state = await dashboard.getState();
+                console.log('插件状态:', state);
+                
+                // 只在展示状态下加载数据
+                if (state === 'display') {
+                    console.log('插件处于展示状态，开始加载数据');
+                    loadData();
+                } else {
+                    console.log(`插件状态为 ${state}，等待进入展示状态`);
+                    document.getElementById('status-text').textContent = `插件状态: ${state}，等待进入展示状态...`;
+                    document.getElementById('status-text').style.color = '#ff991f';
+                    
+                    // 监听状态变化
+                    dashboard.onStateChange((newState) => {
+                        console.log('插件状态变化:', newState);
+                        if (newState === 'display') {
+                            loadData();
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('插件初始化失败:', error);
+                document.getElementById('status-text').textContent = `初始化失败: ${error.message}`;
+                document.getElementById('status-text').style.color = '#de350b';
             }
-        });
+        }
+        
+        // 等待页面和 SDK 加载完成
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                setTimeout(initPlugin, 100);
+            });
+        } else {
+            setTimeout(initPlugin, 100);
+        }
     </script>
 </body>
 </html>
