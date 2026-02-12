@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品分类四象限（波士顿矩阵）</title>
-    <!-- 飞书 Base JS SDK -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk/bitable.js"></script>
     <!-- ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -201,8 +199,12 @@
             
             try {
                 // 检查 bitable 是否可用
-                if (typeof bitable === 'undefined' || !bitable.base) {
-                    throw new Error('Base JS SDK 未加载，请确保在飞书环境中运行');
+                if (typeof bitable === 'undefined') {
+                    throw new Error('Base JS SDK 未加载，请检查 SDK 脚本是否正确引入');
+                }
+                
+                if (!bitable.base) {
+                    throw new Error('bitable.base 不可用，请确保在飞书 Dashboard 插件环境中运行');
                 }
                 
                 // 获取当前 Base
@@ -851,21 +853,38 @@
         }
 
         // 飞书插件初始化
-        if (typeof bitable !== 'undefined' && bitable.bridge) {
-            // 在飞书环境中，等待 SDK 就绪
-            bitable.bridge.ready().then(() => {
-                console.log('Base JS SDK 已就绪');
+        // Dashboard 插件中，bitable 对象由飞书环境自动注入
+        // 等待 SDK 加载完成
+        function initPlugin() {
+            // 检查 bitable 是否已加载（飞书环境会自动注入）
+            if (typeof bitable !== 'undefined' && bitable.base) {
+                console.log('Base JS SDK 已加载');
                 loadData();
-            }).catch(err => {
-                console.error('SDK 初始化失败:', err);
-                document.getElementById('status-text').textContent = `初始化失败: ${err.message}`;
-                document.getElementById('status-text').style.color = '#de350b';
-            });
+            } else {
+                // SDK 可能还在加载，延迟重试（最多等待 5 秒）
+                let retryCount = 0;
+                const maxRetries = 50; // 50 * 100ms = 5秒
+                const checkInterval = setInterval(() => {
+                    retryCount++;
+                    if (typeof bitable !== 'undefined' && bitable.base) {
+                        clearInterval(checkInterval);
+                        console.log('Base JS SDK 已加载');
+                        loadData();
+                    } else if (retryCount >= maxRetries) {
+                        clearInterval(checkInterval);
+                        console.error('Base JS SDK 加载超时');
+                        document.getElementById('status-text').textContent = '请在飞书插件环境中运行';
+                        document.getElementById('status-text').style.color = '#ff991f';
+                    }
+                }, 100);
+            }
+        }
+        
+        // 页面加载完成后初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPlugin);
         } else {
-            // 非飞书环境（本地调试）
-            console.warn('未检测到飞书环境，请在飞书插件中运行');
-            document.getElementById('status-text').textContent = '请在飞书插件环境中运行';
-            document.getElementById('status-text').style.color = '#ff991f';
+            initPlugin();
         }
     </script>
 </body>
