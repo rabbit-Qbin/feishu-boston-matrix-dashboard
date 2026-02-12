@@ -243,20 +243,59 @@
             let waitCount = 0;
             const maxWait = 100; // 10秒 = 100 * 100ms
             
+            console.log('开始检测飞书环境...');
+            
+            // 方法1：检查 bitable 是否已加载
             while (waitCount < maxWait) {
-                if (typeof bitable !== 'undefined' && bitable.base) {
-                    isFeishuEnv = true;
-                    break;
+                if (typeof bitable !== 'undefined') {
+                    console.log('检测到 bitable 对象');
+                    // 等待 bridge ready（如果存在）
+                    if (bitable.bridge && typeof bitable.bridge.ready === 'function') {
+                        try {
+                            await bitable.bridge.ready();
+                            console.log('bitable.bridge.ready() 完成');
+                        } catch (e) {
+                            console.warn('bitable.bridge.ready() 失败:', e);
+                        }
+                    }
+                    
+                    // 检查是否有 base 或 dashboard
+                    if (bitable.base || bitable.dashboard) {
+                        isFeishuEnv = true;
+                        console.log('确认飞书环境，bitable.base:', !!bitable.base, 'bitable.dashboard:', !!bitable.dashboard);
+                        break;
+                    }
                 }
                 await new Promise(resolve => setTimeout(resolve, 100));
                 waitCount++;
             }
             
+            // 方法2：检查 URL 是否包含飞书相关参数
+            if (!isFeishuEnv) {
+                const url = window.location.href;
+                if (url.includes('feishu.cn') || url.includes('larkoffice.com') || url.includes('isCreate=')) {
+                    console.log('从 URL 判断可能是飞书环境');
+                    // 再等待一下 SDK 加载
+                    for (let i = 0; i < 20; i++) {
+                        if (typeof bitable !== 'undefined' && (bitable.base || bitable.dashboard)) {
+                            isFeishuEnv = true;
+                            console.log('延迟检测到飞书环境');
+                            break;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
+            }
+            
             if (isFeishuEnv) {
                 try {
-                    const dashboard = window.dashboard || (bitable ? bitable.dashboard : null);
+                    // 优先使用 bitable.dashboard，其次使用 window.dashboard
+                    const dashboard = bitable.dashboard || window.dashboard;
+                    console.log('dashboard 对象:', dashboard ? '存在' : '不存在');
+                    
                     if (dashboard) {
                         const state = dashboard.state;
+                        console.log('插件状态:', state);
                         isCreateOrConfig = (state === 'create' || state === 'config');
                         
                         if (isCreateOrConfig) {
@@ -289,13 +328,23 @@
                             await loadData(false);
                             return;
                         }
+                    } else {
+                        console.warn('dashboard 对象不存在，但检测到飞书环境，尝试直接使用 bitable.base');
+                        // 即使没有 dashboard，也尝试使用 bitable.base
+                        infoText.textContent = '飞书插件环境：使用 Base JS SDK 实时读取数据';
+                        statusText.textContent = '展示状态（无 dashboard）';
+                        await loadData(false);
+                        return;
                     }
                 } catch (error) {
                     console.error('获取插件状态失败:', error);
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.innerHTML = `<div class="error">飞书环境检测失败: ${error.message || '未知错误'}<br/>将尝试使用本地后端...</div>`;
                 }
             }
             
             // 非飞书环境或 SDK 未加载：使用本地 Flask 后端
+            console.log('使用本地环境模式');
             isFeishuEnv = false;
             infoText.innerHTML = '本页为本地调试版：当前从 <code>http://localhost:8000/api/table4/scatter-data</code> 拉取表4数据，在飞书插件中将由 Base JS SDK 实时读取';
             statusText.textContent = '本地环境';
@@ -311,16 +360,24 @@
             statusText.textContent = '正在加载数据...';
             
             // 飞书环境：使用 Base JS SDK
-            if (isFeishuEnv && typeof bitable !== 'undefined' && bitable.base) {
+            if (isFeishuEnv && typeof bitable !== 'undefined') {
                 try {
-                    const base = await bitable.base.getActiveBase();
-                    const table = await base.getTableByName('表4');
-                    if (!table) {
-                        throw new Error('未找到表4');
+                    // 确保 bitable.base 存在
+                    if (!bitable.base) {
+                        throw new Error('bitable.base 未初始化，请检查 SDK 是否正确加载');
                     }
                     
+                    const base = await bitable.base.getActiveBase();
+                    console.log('获取到 base 对象:', base ? '成功' : '失败');
+                    
+                    const table = await base.getTableByName('表4');
+                    if (!table) {
+                        throw new Error('未找到表4，请检查表名是否正确');
+                    }
+                    console.log('获取到表4对象');
+                    
                     let recordList;
-                    const dashboard = window.dashboard || (bitable ? bitable.dashboard : null);
+                    const dashboard = bitable.dashboard || window.dashboard;
                     
                     if (isPreview && dashboard && dashboard.getPreviewData) {
                         console.log('使用预览数据模式（创建状态）');
