@@ -7,6 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <!-- 飞书 Base JS SDK -->
     <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js"></script>
+    <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -214,50 +215,36 @@
             const statusText = document.getElementById('status-text');
             const infoText = document.getElementById('info-text');
             
-            // 等待 Base JS SDK 加载（最多等待 10 秒）
-            let waitCount = 0;
-            const maxWait = 100; // 10秒 = 100 * 100ms
+            console.log('开始初始化插件...');
+            console.log('当前 URL:', window.location.href);
+            console.log('bitable 是否存在:', typeof bitable !== 'undefined');
             
-            console.log('开始检测飞书环境...');
+            // 先通过 URL 判断是否在飞书环境中
+            const url = window.location.href;
+            const isInFeishuDomain = url.includes('feishu.cn') || url.includes('larkoffice.com') || 
+                                      url.includes('bytedance.net') || url.includes('larksuite.com');
             
-            // 方法1：检查 bitable 是否已加载
-            while (waitCount < maxWait) {
-                if (typeof bitable !== 'undefined') {
-                    console.log('检测到 bitable 对象');
-                    // 等待 bridge ready（如果存在）
-                    if (bitable.bridge && typeof bitable.bridge.ready === 'function') {
-                        try {
-                            await bitable.bridge.ready();
-                            console.log('bitable.bridge.ready() 完成');
-                        } catch (e) {
-                            console.warn('bitable.bridge.ready() 失败:', e);
-                        }
-                    }
-                    
-                    // 检查是否有 base 或 dashboard
-                    if (bitable.base || bitable.dashboard) {
-                        isFeishuEnv = true;
-                        console.log('确认飞书环境，bitable.base:', !!bitable.base, 'bitable.dashboard:', !!bitable.dashboard);
-                        break;
-                    }
+            console.log('是否在飞书域名:', isInFeishuDomain);
+            
+            // 如果在飞书域名或者 SDK 已加载，就认为是飞书环境
+            if (isInFeishuDomain || (typeof bitable !== 'undefined' && (bitable.base || bitable.dashboard))) {
+                isFeishuEnv = true;
+                console.log('确认为飞书环境');
+                
+                // 等待 SDK 加载完成（简化版，只等待 2 秒）
+                if (typeof bitable === 'undefined') {
+                    statusText.textContent = '正在加载 SDK...';
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                 }
-                await new Promise(resolve => setTimeout(resolve, 100));
-                waitCount++;
-            }
-            
-            // 方法2：检查 URL 是否包含飞书相关参数
-            if (!isFeishuEnv) {
-                const url = window.location.href;
-                if (url.includes('feishu.cn') || url.includes('larkoffice.com') || url.includes('isCreate=')) {
-                    console.log('从 URL 判断可能是飞书环境');
-                    // 再等待一下 SDK 加载
-                    for (let i = 0; i < 20; i++) {
-                        if (typeof bitable !== 'undefined' && (bitable.base || bitable.dashboard)) {
-                            isFeishuEnv = true;
-                            console.log('延迟检测到飞书环境');
-                            break;
-                        }
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // 调用 bridge.ready()
+                if (typeof bitable !== 'undefined' && bitable.bridge && typeof bitable.bridge.ready === 'function') {
+                    try {
+                        console.log('调用 bitable.bridge.ready()...');
+                        await bitable.bridge.ready();
+                        console.log('bitable.bridge.ready() 完成');
+                    } catch (e) {
+                        console.warn('bitable.bridge.ready() 失败:', e);
                     }
                 }
             }
@@ -331,13 +318,17 @@
                         return;
                     }
                 } catch (error) {
-                    console.error('获取插件状态失败:', error);
+                    console.error('插件初始化失败:', error);
                     const statusDiv = document.getElementById('status');
-                    statusDiv.innerHTML = `<div class="error">飞书环境检测失败: ${error.message || '未知错误'}<br/>将尝试使用本地后端...</div>`;
+                    infoText.textContent = '飞书插件环境（初始化错误）';
+                    statusText.textContent = '错误';
+                    statusText.style.color = '#de350b';
+                    statusDiv.innerHTML = `<div class="error">初始化失败: ${error.message || '未知错误'}<br/>请刷新页面重试</div>`;
+                    return; // 不要回退到本地后端
                 }
             }
             
-            // 非飞书环境或 SDK 未加载：使用本地 Flask 后端
+            // 非飞书环境：使用本地 Flask 后端
             console.log('使用本地环境模式');
             isFeishuEnv = false;
             infoText.innerHTML = '本页为本地调试版：当前从 <code>http://localhost:8000/api/table4/scatter-data</code> 拉取表4数据，在飞书插件中将由 Base JS SDK 实时读取';
@@ -354,11 +345,19 @@
             statusText.textContent = '正在加载数据...';
             
             // 飞书环境：使用 Base JS SDK
-            if (isFeishuEnv && typeof bitable !== 'undefined') {
+            if (isFeishuEnv) {
+                // 检查 SDK 是否加载
+                if (typeof bitable === 'undefined') {
+                    statusText.textContent = 'SDK 加载失败';
+                    statusText.style.color = '#de350b';
+                    statusDiv.innerHTML = `<div class="error">Base JS SDK 未加载<br/>请检查网络连接或刷新页面重试</div>`;
+                    return;
+                }
+                
                 try {
                     // 确保 bitable.base 存在
                     if (!bitable.base) {
-                        throw new Error('bitable.base 未初始化，请检查 SDK 是否正确加载');
+                        throw new Error('bitable.base 未初始化');
                     }
                     
                     const base = await bitable.base.getActiveBase();
@@ -439,8 +438,8 @@
                     console.error('飞书 SDK 加载数据失败:', error);
                     statusText.textContent = '加载失败: ' + (error.message || '未知错误');
                     statusText.style.color = '#de350b';
-                    statusDiv.innerHTML = `<div class="error">飞书 SDK 错误: ${error.message || '未知错误'}<br/>将尝试使用本地后端...</div>`;
-                    // 继续尝试本地后端
+                    statusDiv.innerHTML = `<div class="error">数据加载失败: ${error.message || '未知错误'}<br/>请检查表4是否存在，以及字段名称是否正确</div>`;
+                    return; // 不要回退到本地后端
                 }
             }
             
