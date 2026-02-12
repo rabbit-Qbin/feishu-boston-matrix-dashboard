@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>选品决策波士顿矩阵</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-    <!-- 飞书 Base JS SDK - 确保正确加载 -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js" charset="utf-8" crossorigin="anonymous"></script>
-    <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css" crossorigin="anonymous">
+    <!-- 飞书 Base JS SDK - 使用 defer 确保 DOM 加载后再执行 -->
+    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js" defer charset="utf-8"></script>
+    <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -109,18 +109,20 @@
 </head>
 <body>
     <div class="container" id="main-container">
-        <div class="header">
-            <h1>产品分类四象限（波士顿矩阵）</h1>
-            <button onclick="initPlugin()" id="reload-btn" style="display: none;">重新加载</button>
+        <div class="main-content">
+            <div class="header">
+                <h1>产品分类四象限（波士顿矩阵）</h1>
+                <button onclick="loadData()" id="reload-btn" style="display: none;">重新加载</button>
+            </div>
+            
+            <div class="info">
+                <span id="info-text">正在检测运行环境...</span>
+                <span id="status-text" style="color: var(--text-sub);">正在初始化...</span>
+            </div>
+            
+            <div id="status"></div>
+            <div id="chart"></div>
         </div>
-        
-        <div class="info">
-            <span id="info-text">正在检测运行环境...</span>
-            <span id="status-text" style="color: var(--text-sub);">正在初始化...</span>
-        </div>
-        
-        <div id="status"></div>
-        <div id="chart"></div>
         
         <!-- 飞书会自动显示"确定"按钮，不需要手动渲染 -->
     </div>
@@ -213,30 +215,48 @@
                 isFeishuEnv = true;
                 console.log('确认为飞书环境');
                 
-                // 等待 SDK 加载完成（增加到 5 秒，每 200ms 检查一次）
+                // 等待 SDK 加载完成（增加到 10 秒，每 100ms 检查一次）
                 if (typeof bitable === 'undefined') {
                     statusText.textContent = '正在加载 SDK...';
                     console.log('SDK 未加载，开始等待...');
                     
                     let waitTime = 0;
-                    const maxWaitTime = 5000; // 最多等待 5 秒
-                    const checkInterval = 200; // 每 200ms 检查一次
+                    const maxWaitTime = 10000; // 最多等待 10 秒
+                    const checkInterval = 100; // 每 100ms 检查一次
                     
                     while (typeof bitable === 'undefined' && waitTime < maxWaitTime) {
                         await new Promise(resolve => setTimeout(resolve, checkInterval));
                         waitTime += checkInterval;
-                        console.log(`等待 SDK 加载中... (${waitTime}ms)`);
+                        if (waitTime % 1000 === 0) {
+                            console.log(`等待 SDK 加载中... (${waitTime}ms)`);
+                        }
                     }
                     
                     if (typeof bitable === 'undefined') {
-                        console.error('SDK 加载超时');
+                        console.error('❌ SDK 加载超时 - 可能原因：');
+                        console.error('1. 网络问题导致 SDK 脚本下载失败');
+                        console.error('2. CDN 被阻止或不可访问');
+                        console.error('3. CSP (内容安全策略) 阻止了脚本加载');
+                        console.error('4. 不在飞书iframe环境中，SDK未自动注入');
                         statusText.textContent = 'SDK 加载超时';
                         statusText.style.color = '#de350b';
                         const statusDiv = document.getElementById('status');
-                        statusDiv.innerHTML = `<div class="error">SDK 加载失败，请检查网络连接或刷新页面<br/>等待时间: ${waitTime}ms</div>`;
-                        // 不要 return，继续尝试显示配置面板
+                        statusDiv.innerHTML = `<div class="error">
+                            ❌ SDK 加载失败<br/>
+                            <br/>
+                            <strong>可能原因：</strong><br/>
+                            1. 网络连接问题<br/>
+                            2. CDN 不可访问<br/>
+                            3. 浏览器安全策略阻止<br/>
+                            4. 未在飞书环境中运行<br/>
+                            <br/>
+                            等待时间: ${waitTime}ms<br/>
+                            <br/>
+                            请打开浏览器控制台查看详细错误信息
+                        </div>`;
+                        // 不要 return，继续尝试兜底方案
                     } else {
-                        console.log('SDK 加载成功');
+                        console.log('✅ SDK 加载成功');
                     }
                 }
                 
@@ -758,7 +778,15 @@
             window.addEventListener('resize', () => myChart.resize());
         }
 
-        window.onload = function() { initPlugin(); };
+        // 等待 DOM 和 SDK 完全加载后再初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                // 给 SDK 额外时间加载
+                setTimeout(initPlugin, 100);
+            });
+        } else {
+            setTimeout(initPlugin, 100);
+        }
     </script>
 </body>
 </html>
