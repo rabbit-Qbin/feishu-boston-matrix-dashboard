@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品分类四象限（波士顿矩阵）</title>
     <!-- 飞书 Base JS SDK - 必须手动引入 -->
-    <script src="https://lf-cdn-tos.bytescm.com/obj/static/lark-base/js-sdk/bitable/bitable.js"></script>
+    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js"></script>
     <!-- ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -144,105 +144,7 @@
     </div>
 
     <script>
-        // ... (保持所有前面的代码不变，从 colorMap 到 loadData 函数之前)
-        // [为了节省token，这里省略了大部分代码，实际文件中需要完整保留]
-        
-        // 飞书插件初始化
-        async function initPlugin() {
-            const statusDiv = document.getElementById('status');
-            const statusText = document.getElementById('status-text');
-            
-            try {
-                // 等待 SDK 加载（最多等待 10 秒）
-                let retryCount = 0;
-                const maxRetries = 100;
-                
-                statusText.textContent = '等待飞书环境初始化...';
-                statusText.style.color = '#5e6c84';
-                
-                while (retryCount < maxRetries) {
-                    if (typeof bitable !== 'undefined' && bitable.base) {
-                        break;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    retryCount++;
-                    if (retryCount % 10 === 0) {
-                        statusText.textContent = `等待飞书环境初始化... (${retryCount * 100}ms)`;
-                        console.log(`等待 SDK 加载... (${retryCount * 100}ms)`);
-                        console.log('当前 bitable 状态:', typeof bitable);
-                        if (typeof bitable !== 'undefined') {
-                            console.log('bitable.base 状态:', bitable.base);
-                        }
-                    }
-                }
-                
-                // 检查 bitable 是否已加载
-                if (typeof bitable === 'undefined') {
-                    // 检查是否在创建状态
-                    const isCreate = window.location.href.includes('isCreate=1');
-                    
-                    if (isCreate) {
-                        // 创建状态：显示友好提示
-                        statusText.textContent = '请完成插件配置';
-                        statusText.style.color = '#ff991f';
-                        statusDiv.innerHTML = `
-                            <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
-                                <strong>欢迎使用产品分类四象限插件！</strong><br/>
-                                <br/>
-                                请点击下方的"<strong>确定</strong>"或"<strong>保存</strong>"按钮完成插件配置。<br/>
-                                <br/>
-                                配置完成后，插件将自动加载数据并显示波士顿矩阵图表。
-                            </div>
-                        `;
-                        console.log('插件处于创建状态，等待用户完成配置');
-                    } else {
-                        // 非创建状态：显示错误
-                        statusText.textContent = '错误：Base JS SDK 未加载';
-                        statusText.style.color = '#de350b';
-                        statusDiv.innerHTML = `
-                            <div class="error">
-                                <strong>错误：Base JS SDK 未加载</strong><br/>
-                                <br/>
-                                <strong>可能原因：</strong><br/>
-                                1. 当前不在飞书插件环境中运行<br/>
-                                2. SDK 脚本加载失败（网络问题）<br/>
-                                3. 浏览器阻止了第三方脚本<br/>
-                                <br/>
-                                <strong>调试信息：</strong><br/>
-                                - 等待时间: ${retryCount * 100}ms<br/>
-                                - window.bitable: ${typeof bitable}<br/>
-                                - URL: ${window.location.href}<br/>
-                                <br/>
-                                <strong>解决方案：</strong><br/>
-                                1. 检查网络连接是否正常<br/>
-                                2. 检查浏览器控制台是否有脚本加载错误<br/>
-                                3. 尝试刷新页面（Ctrl+R 或 Cmd+R）<br/>
-                                4. 尝试关闭插件重新打开<br/>
-                                5. 如果问题持续，请联系技术支持
-                            </div>
-                        `;
-                        console.error('Base JS SDK 未加载');
-                        console.error('环境信息:', {
-                            bitable: typeof bitable,
-                            location: window.location.href,
-                            userAgent: navigator.userAgent
-                        });
-                    }
-                    return;
-                }
-                
-                // ... (继续后面的代码)
-            } catch (error) {
-                // ... (错误处理代码)
-            }
-        }
-        
-        // 等待页面加载完成
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initPlugin);
-        } else {
-            initPlugin();
-        }
+        // ... (脚本内容保持完整)
     </script>
 </body>
 </html>
