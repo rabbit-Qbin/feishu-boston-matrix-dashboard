@@ -55,33 +55,18 @@
         }
 
         .config-panel {
-            width: 320px;
+            width: 200px;
             background: #fafbfc;
             border-left: 1px solid var(--border);
             padding: 24px;
-            overflow-y: auto;
             display: flex;
-            flex-direction: column;
-        }
-
-        .config-panel h3 {
-            margin: 0 0 16px 0;
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-
-        .config-panel .welcome-text {
-            font-size: 13px;
-            line-height: 1.6;
-            color: var(--text-sub);
-            margin-bottom: 20px;
+            align-items: center;
+            justify-content: center;
         }
 
         .config-panel .save-btn {
-            margin-top: auto;
             width: 100%;
-            padding: 10px 24px;
+            padding: 12px 24px;
             font-size: 14px;
             font-weight: 600;
         }
@@ -172,16 +157,6 @@
         
         <!-- 配置面板（创建/配置状态时显示） -->
         <div class="config-panel" id="config-panel" style="display: none;">
-            <h3>插件配置</h3>
-            <div class="welcome-text">
-                <strong>欢迎使用产品分类四象限插件！</strong><br/><br/>
-                <strong>插件说明：</strong><br/>
-                • 自动从指定表加载数据<br/>
-                • 根据需求趋势和竞争强度绘制波士顿矩阵<br/>
-                • 气泡大小和颜色由利润空间决定<br/><br/>
-                左侧是图表预览效果。<br/>
-                确认无误后，点击下方"确定"按钮完成配置。
-            </div>
             <button id="save-config-btn" class="save-btn">确定</button>
         </div>
     </div>
@@ -311,11 +286,11 @@
                     console.log('isCreateOrConfig:', isCreateOrConfig, 'state:', state, 'isCreateFromUrl:', isCreateFromUrl);
                     
                     if (isCreateOrConfig) {
-                        // 创建/配置状态：显示配置面板
+                        // 创建/配置状态：显示配置面板和确定按钮
                         console.log('进入创建/配置模式，显示配置面板');
                         document.getElementById('main-container').classList.add('config-mode');
                         document.getElementById('config-panel').style.display = 'flex';
-                        infoText.textContent = '插件配置模式：请查看左侧预览，确认后点击"确定"完成配置';
+                        infoText.textContent = '插件配置模式：查看预览后点击右侧"确定"按钮完成配置';
                         statusText.textContent = '配置状态';
                         
                         // 绑定"确定"按钮事件
