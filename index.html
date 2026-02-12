@@ -6,7 +6,7 @@
     <title>选品决策波士顿矩阵</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <!-- 飞书 Base JS SDK -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js"></script>
+    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js" charset="utf-8"></script>
     <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -271,6 +271,12 @@
                     
                     isCreateOrConfig = (state === 'create' || state === 'config' || isCreateFromUrl);
                     console.log('isCreateOrConfig:', isCreateOrConfig, 'state:', state, 'isCreateFromUrl:', isCreateFromUrl);
+                    
+                    // 如果没有明确的状态，但在飞书环境中，也显示配置面板（兜底逻辑）
+                    if (!state && !isCreateFromUrl && isInFeishuDomain) {
+                        console.log('飞书环境中无法确定状态，默认显示配置面板');
+                        isCreateOrConfig = true;
+                    }
                     
                     if (isCreateOrConfig) {
                         // 创建/配置状态：显示配置面板和确定按钮
