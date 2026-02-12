@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>选品决策波士顿矩阵</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-    <!-- 飞书 Base JS SDK - 使用 defer 确保 DOM 加载后再执行 -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js" defer charset="utf-8"></script>
-    <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css">
+    <!-- 
+        重要：飞书会在 iframe 中自动注入 Base JS SDK
+        我们不需要手动加载 SDK 脚本，只需要等待 bitable 对象可用即可
+        参考：https://lark-base-team.github.io/js-sdk-docs/
+    -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -211,53 +213,57 @@
             console.log('parent 是否在飞书:', parentInFeishu);
             
             // 综合判断：在飞书域名、或在 iframe 中、或 SDK 已加载
-            if (isInFeishuDomain || parentInFeishu || (typeof bitable !== 'undefined' && (bitable.base || bitable.dashboard))) {
+            if (isInFeishuDomain || parentInFeishu || isInIframe) {
                 isFeishuEnv = true;
-                console.log('确认为飞书环境');
+                console.log('✅ 确认为飞书环境');
                 
-                // 等待 SDK 加载完成（增加到 10 秒，每 100ms 检查一次）
+                // 飞书会自动注入 SDK，等待 bitable 对象可用（最多 15 秒）
+                statusText.textContent = '等待飞书 SDK 注入...';
+                console.log('等待飞书自动注入 SDK...');
+                
+                let waitTime = 0;
+                const maxWaitTime = 15000; // 最多等待 15 秒
+                const checkInterval = 100; // 每 100ms 检查一次
+                
+                while (typeof bitable === 'undefined' && waitTime < maxWaitTime) {
+                    await new Promise(resolve => setTimeout(resolve, checkInterval));
+                    waitTime += checkInterval;
+                    if (waitTime % 1000 === 0) {
+                        console.log(`等待 SDK 注入中... (${waitTime}ms)`);
+                        statusText.textContent = `等待飞书 SDK 注入... (${waitTime / 1000}s)`;
+                    }
+                }
+                
                 if (typeof bitable === 'undefined') {
-                    statusText.textContent = '正在加载 SDK...';
-                    console.log('SDK 未加载，开始等待...');
-                    
-                    let waitTime = 0;
-                    const maxWaitTime = 10000; // 最多等待 10 秒
-                    const checkInterval = 100; // 每 100ms 检查一次
-                    
-                    while (typeof bitable === 'undefined' && waitTime < maxWaitTime) {
-                        await new Promise(resolve => setTimeout(resolve, checkInterval));
-                        waitTime += checkInterval;
-                        if (waitTime % 1000 === 0) {
-                            console.log(`等待 SDK 加载中... (${waitTime}ms)`);
-                        }
-                    }
-                    
-                    if (typeof bitable === 'undefined') {
-                        console.error('❌ SDK 加载超时 - 可能原因：');
-                        console.error('1. 网络问题导致 SDK 脚本下载失败');
-                        console.error('2. CDN 被阻止或不可访问');
-                        console.error('3. CSP (内容安全策略) 阻止了脚本加载');
-                        console.error('4. 不在飞书iframe环境中，SDK未自动注入');
-                        statusText.textContent = 'SDK 加载超时';
-                        statusText.style.color = '#de350b';
-                        const statusDiv = document.getElementById('status');
-                        statusDiv.innerHTML = `<div class="error">
-                            ❌ SDK 加载失败<br/>
-                            <br/>
-                            <strong>可能原因：</strong><br/>
-                            1. 网络连接问题<br/>
-                            2. CDN 不可访问<br/>
-                            3. 浏览器安全策略阻止<br/>
-                            4. 未在飞书环境中运行<br/>
-                            <br/>
-                            等待时间: ${waitTime}ms<br/>
-                            <br/>
-                            请打开浏览器控制台查看详细错误信息
-                        </div>`;
-                        // 不要 return，继续尝试兜底方案
-                    } else {
-                        console.log('✅ SDK 加载成功');
-                    }
+                    console.error('❌ SDK 注入超时 - 可能原因：');
+                    console.error('1. 不在真实的飞书 iframe 环境中');
+                    console.error('2. 飞书版本过旧，不支持自动注入');
+                    console.error('3. 插件 URL 配置错误');
+                    statusText.textContent = 'SDK 注入超时';
+                    statusText.style.color = '#de350b';
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.innerHTML = `<div class="error">
+                        ❌ 飞书 SDK 未自动注入<br/>
+                        <br/>
+                        <strong>可能原因：</strong><br/>
+                        1. 不在真实的飞书 iframe 环境中<br/>
+                        2. 飞书版本过旧（需要最新版）<br/>
+                        3. 插件 URL 配置错误<br/>
+                        4. 浏览器安全策略阻止<br/>
+                        <br/>
+                        等待时间: ${waitTime}ms<br/>
+                        <br/>
+                        <strong>建议：</strong><br/>
+                        - 确认在飞书多维表格的仪表盘中打开<br/>
+                        - 检查插件 URL 是否正确（必须是 HTTPS）<br/>
+                        - 更新飞书到最新版本
+                    </div>`;
+                    // 不要 return，继续尝试兜底方案
+                } else {
+                    console.log('✅ SDK 注入成功');
+                    console.log('bitable 对象:', bitable);
+                    console.log('bitable.base:', typeof bitable.base);
+                    console.log('bitable.dashboard:', typeof bitable.dashboard);
                 }
                 
                 // 调用 bridge.ready()
