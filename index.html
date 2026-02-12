@@ -249,10 +249,31 @@
                 isFeishuEnv = true;
                 console.log('确认为飞书环境');
                 
-                // 等待 SDK 加载完成（简化版，只等待 2 秒）
+                // 等待 SDK 加载完成（增加到 5 秒，每 200ms 检查一次）
                 if (typeof bitable === 'undefined') {
                     statusText.textContent = '正在加载 SDK...';
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    console.log('SDK 未加载，开始等待...');
+                    
+                    let waitTime = 0;
+                    const maxWaitTime = 5000; // 最多等待 5 秒
+                    const checkInterval = 200; // 每 200ms 检查一次
+                    
+                    while (typeof bitable === 'undefined' && waitTime < maxWaitTime) {
+                        await new Promise(resolve => setTimeout(resolve, checkInterval));
+                        waitTime += checkInterval;
+                        console.log(`等待 SDK 加载中... (${waitTime}ms)`);
+                    }
+                    
+                    if (typeof bitable === 'undefined') {
+                        console.error('SDK 加载超时');
+                        statusText.textContent = 'SDK 加载超时';
+                        statusText.style.color = '#de350b';
+                        const statusDiv = document.getElementById('status');
+                        statusDiv.innerHTML = `<div class="error">SDK 加载失败，请检查网络连接或刷新页面<br/>等待时间: ${waitTime}ms</div>`;
+                        // 不要 return，继续尝试显示配置面板
+                    } else {
+                        console.log('SDK 加载成功');
+                    }
                 }
                 
                 // 调用 bridge.ready()
@@ -269,6 +290,40 @@
             
             if (isFeishuEnv) {
                 try {
+                    // 检查 bitable 是否加载
+                    if (typeof bitable === 'undefined') {
+                        console.error('进入飞书环境处理，但 bitable 仍未定义');
+                        // 即使 SDK 未加载，也尝试显示配置面板（兜底）
+                        const dashboard = null;
+                        const state = null;
+                        const url = window.location.href;
+                        const isCreateFromUrl = url.includes('isCreate=1') || url.includes('isCreate=true');
+                        
+                        // 在飞书环境中，默认显示配置面板
+                        isCreateOrConfig = true;
+                        console.log('SDK 未加载，但仍显示配置面板（兜底逻辑）');
+                        
+                        document.getElementById('main-container').classList.add('config-mode');
+                        document.getElementById('config-panel').style.display = 'flex';
+                        infoText.textContent = '插件配置模式：查看预览后点击右侧"确定"按钮完成配置';
+                        statusText.textContent = 'SDK 未加载，显示静态配置';
+                        
+                        // 绑定"确定"按钮（但功能受限）
+                        const saveBtn = document.getElementById('save-config-btn');
+                        if (saveBtn) {
+                            saveBtn.onclick = async () => {
+                                statusText.textContent = '⚠️ SDK 未加载，无法保存配置。请刷新页面重试。';
+                                statusText.style.color = '#ff991f';
+                            };
+                            console.log('已绑定"确定"按钮事件（受限模式）');
+                        }
+                        
+                        // 显示错误提示
+                        const statusDiv = document.getElementById('status');
+                        statusDiv.innerHTML = `<div class="error">SDK 未加载，数据加载功能不可用<br/>请刷新页面重试</div>`;
+                        return;
+                    }
+                    
                     // 优先使用 bitable.dashboard，其次使用 window.dashboard
                     const dashboard = bitable.dashboard || window.dashboard;
                     console.log('dashboard 对象:', dashboard ? '存在' : '不存在');
