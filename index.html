@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品分类四象限（波士顿矩阵）</title>
+    <!-- 飞书 Base JS SDK -->
+    <script src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk/bitable.js"></script>
     <!-- ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -853,39 +855,26 @@
         }
 
         // 飞书插件初始化
-        // Dashboard 插件中，bitable 对象由飞书环境自动注入
-        // 等待 SDK 加载完成
-        function initPlugin() {
-            // 检查 bitable 是否已加载（飞书环境会自动注入）
+        // 等待 SDK 加载完成后再初始化
+        window.addEventListener('load', () => {
+            // 检查 bitable 是否已加载
             if (typeof bitable !== 'undefined' && bitable.base) {
                 console.log('Base JS SDK 已加载');
                 loadData();
             } else {
-                // SDK 可能还在加载，延迟重试（最多等待 5 秒）
-                let retryCount = 0;
-                const maxRetries = 50; // 50 * 100ms = 5秒
-                const checkInterval = setInterval(() => {
-                    retryCount++;
+                // 如果 SDK 还没加载，等待一下再试
+                setTimeout(() => {
                     if (typeof bitable !== 'undefined' && bitable.base) {
-                        clearInterval(checkInterval);
-                        console.log('Base JS SDK 已加载');
+                        console.log('Base JS SDK 已加载（延迟）');
                         loadData();
-                    } else if (retryCount >= maxRetries) {
-                        clearInterval(checkInterval);
-                        console.error('Base JS SDK 加载超时');
+                    } else {
+                        console.error('Base JS SDK 未加载');
                         document.getElementById('status-text').textContent = '请在飞书插件环境中运行';
                         document.getElementById('status-text').style.color = '#ff991f';
                     }
-                }, 100);
+                }, 500);
             }
-        }
-        
-        // 页面加载完成后初始化
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initPlugin);
-        } else {
-            initPlugin();
-        }
+        });
     </script>
 </body>
 </html>
