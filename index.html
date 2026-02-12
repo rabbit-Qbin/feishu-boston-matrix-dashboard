@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>选品决策波士顿矩阵</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <!-- 飞书 Base JS SDK -->
+    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -33,6 +35,55 @@
             border-radius: 8px;
             padding: 24px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        /* 配置模式：左右分栏布局 */
+        .container.config-mode {
+            display: flex;
+            gap: 0;
+            padding: 0;
+            max-width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+            margin: 0;
+        }
+
+        .main-content {
+            flex: 1;
+            overflow: auto;
+            padding: 24px;
+        }
+
+        .config-panel {
+            width: 320px;
+            background: #fafbfc;
+            border-left: 1px solid var(--border);
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .config-panel h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .config-panel .welcome-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-sub);
+            margin-bottom: 20px;
+        }
+
+        .config-panel .save-btn {
+            margin-top: auto;
+            width: 100%;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
         }
 
         .header {
@@ -103,19 +154,36 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>产品分类四象限（波士顿矩阵）</h1>
-            <button onclick="loadData()">加载数据</button>
+    <div class="container" id="main-container">
+        <div class="main-content">
+            <div class="header">
+                <h1>产品分类四象限（波士顿矩阵）</h1>
+                <button onclick="loadData()" id="reload-btn" style="display: none;">重新加载</button>
+            </div>
+            
+            <div class="info">
+                <span id="info-text">正在检测运行环境...</span>
+                <span id="status-text" style="color: var(--text-sub);">正在初始化...</span>
+            </div>
+            
+            <div id="status"></div>
+            <div id="chart"></div>
         </div>
         
-        <div class="info">
-            <span>本页为本地调试版：当前从 <code>http://localhost:8000/api/table4/scatter-data</code> 拉取表4数据，在飞书插件中将由 Base JS SDK 实时读取</span>
-            <span id="status-text" style="color: var(--text-sub);">点击按钮加载数据</span>
+        <!-- 配置面板（创建/配置状态时显示） -->
+        <div class="config-panel" id="config-panel" style="display: none;">
+            <h3>插件配置</h3>
+            <div class="welcome-text">
+                <strong>欢迎使用产品分类四象限插件！</strong><br/><br/>
+                <strong>插件说明：</strong><br/>
+                • 自动从指定表加载数据<br/>
+                • 根据需求趋势和竞争强度绘制波士顿矩阵<br/>
+                • 气泡大小和颜色由利润空间决定<br/><br/>
+                左侧是图表预览效果。<br/>
+                确认无误后，点击下方"确定"按钮完成配置。
+            </div>
+            <button id="save-config-btn" class="save-btn">确定</button>
         </div>
-        
-        <div id="status"></div>
-        <div id="chart"></div>
     </div>
 
     <script>
@@ -163,12 +231,169 @@
 
         const PORTS = [8000, 8001, 8002, 8003, 8004];
         let myChart = null;
-
-        async function loadData() {
+        let isFeishuEnv = false;
+        let isCreateOrConfig = false;
+        
+        // 初始化插件
+        async function initPlugin() {
+            const statusText = document.getElementById('status-text');
+            const infoText = document.getElementById('info-text');
+            
+            // 等待 Base JS SDK 加载（最多等待 10 秒）
+            let waitCount = 0;
+            const maxWait = 100; // 10秒 = 100 * 100ms
+            
+            while (waitCount < maxWait) {
+                if (typeof bitable !== 'undefined' && bitable.base) {
+                    isFeishuEnv = true;
+                    break;
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+                waitCount++;
+            }
+            
+            if (isFeishuEnv) {
+                try {
+                    const dashboard = window.dashboard || (bitable ? bitable.dashboard : null);
+                    if (dashboard) {
+                        const state = dashboard.state;
+                        isCreateOrConfig = (state === 'create' || state === 'config');
+                        
+                        if (isCreateOrConfig) {
+                            // 创建/配置状态：显示配置面板
+                            document.getElementById('main-container').classList.add('config-mode');
+                            document.getElementById('config-panel').style.display = 'flex';
+                            infoText.textContent = '插件配置模式：请查看左侧预览，确认后点击"确定"完成配置';
+                            statusText.textContent = '配置状态';
+                            
+                            // 绑定"确定"按钮事件
+                            document.getElementById('save-config-btn').onclick = async () => {
+                                try {
+                                    await dashboard.saveConfig({});
+                                    statusText.textContent = '配置已保存';
+                                    statusText.style.color = '#36b37e';
+                                } catch (error) {
+                                    console.error('保存配置失败:', error);
+                                    statusText.textContent = '保存配置失败: ' + (error.message || '未知错误');
+                                    statusText.style.color = '#de350b';
+                                }
+                            };
+                            
+                            // 加载预览数据
+                            await loadData(true);
+                            return;
+                        } else {
+                            // 展示状态：直接加载数据
+                            infoText.textContent = '飞书插件环境：使用 Base JS SDK 实时读取数据';
+                            statusText.textContent = '展示状态';
+                            await loadData(false);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.error('获取插件状态失败:', error);
+                }
+            }
+            
+            // 非飞书环境或 SDK 未加载：使用本地 Flask 后端
+            isFeishuEnv = false;
+            infoText.innerHTML = '本页为本地调试版：当前从 <code>http://localhost:8000/api/table4/scatter-data</code> 拉取表4数据，在飞书插件中将由 Base JS SDK 实时读取';
+            statusText.textContent = '本地环境';
+            document.getElementById('reload-btn').style.display = 'block';
+            await loadData(false);
+        }
+        
+        // isPreview: true 表示创建状态，使用 getPreviewData(); false 表示展示状态，使用完整数据
+        async function loadData(isPreview = false) {
             const statusDiv = document.getElementById('status');
             const statusText = document.getElementById('status-text');
             statusDiv.innerHTML = '';
             statusText.textContent = '正在加载数据...';
+            
+            // 飞书环境：使用 Base JS SDK
+            if (isFeishuEnv && typeof bitable !== 'undefined' && bitable.base) {
+                try {
+                    const base = await bitable.base.getActiveBase();
+                    const table = await base.getTableByName('表4');
+                    if (!table) {
+                        throw new Error('未找到表4');
+                    }
+                    
+                    let recordList;
+                    const dashboard = window.dashboard || (bitable ? bitable.dashboard : null);
+                    
+                    if (isPreview && dashboard && dashboard.getPreviewData) {
+                        console.log('使用预览数据模式（创建状态）');
+                        try {
+                            const previewData = await dashboard.getPreviewData();
+                            recordList = previewData.records || previewData || [];
+                        } catch (e) {
+                            console.warn('获取预览数据失败，尝试使用完整数据:', e);
+                            recordList = await table.getRecordList();
+                        }
+                    } else {
+                        recordList = await table.getRecordList();
+                    }
+                    
+                    // 处理数据
+                    const data = [];
+                    const fieldNames = {
+                        '需求趋势得分': null,
+                        '竞争强度得分': null,
+                        '利润空间得分': null,
+                        '产品名称': null,
+                        'ASIN': null,
+                        '产品分类': null
+                    };
+                    
+                    // 获取字段 ID
+                    const fields = await table.getFieldList();
+                    for (const field of fields) {
+                        const name = field.name;
+                        if (fieldNames.hasOwnProperty(name)) {
+                            fieldNames[name] = field.id;
+                        }
+                    }
+                    
+                    for (const record of recordList) {
+                        const x = await record.getCellValue(fieldNames['需求趋势得分']);
+                        const y = await record.getCellValue(fieldNames['竞争强度得分']);
+                        const size = await record.getCellValue(fieldNames['利润空间得分']);
+                        const title = await record.getCellValue(fieldNames['产品名称']);
+                        const asin = await record.getCellValue(fieldNames['ASIN']);
+                        const category = await record.getCellValue(fieldNames['产品分类']);
+                        
+                        if (typeof x === 'number' && typeof y === 'number' && typeof size === 'number') {
+                            data.push({
+                                x: x,
+                                y: y,
+                                size: size,
+                                title: title ? String(title) : '未知',
+                                asin: asin ? String(asin) : 'N/A',
+                                category: category ? String(category) : ''
+                            });
+                        }
+                    }
+                    
+                    if (data.length > 0) {
+                        statusText.textContent = `✓ 成功加载 ${data.length} 条数据`;
+                        statusText.style.color = '#36b37e';
+                        renderChart(data);
+                    } else {
+                        statusText.textContent = '已连接但无有效数据';
+                        statusText.style.color = '#ff991f';
+                    }
+                    return;
+                } catch (error) {
+                    console.error('飞书 SDK 加载数据失败:', error);
+                    statusText.textContent = '加载失败: ' + (error.message || '未知错误');
+                    statusText.style.color = '#de350b';
+                    statusDiv.innerHTML = `<div class="error">飞书 SDK 错误: ${error.message || '未知错误'}<br/>将尝试使用本地后端...</div>`;
+                    // 继续尝试本地后端
+                }
+            }
+            
+            // 本地环境：使用 Flask 后端
             let lastError = null;
             for (const port of PORTS) {
                 const apiUrl = `http://localhost:${port}/api/table4/scatter-data`;
@@ -229,7 +454,7 @@
             const q60 = len ? sortedSizes[Math.floor(len * 0.6)] : sizeMin + (sizeMax - sizeMin) * 0.6;
             const q80 = len ? sortedSizes[Math.floor(len * 0.8)] : sizeMin + (sizeMax - sizeMin) * 0.8;
             const q90 = len ? sortedSizes[Math.floor(len * 0.9)] : sizeMax;
-
+            
             const xMed = median(xs);
             const yMed = median(ys);
             const xMinRaw = Math.min(...xs);
@@ -269,7 +494,7 @@
             const categoryMap = {};
             const categoryCounts = { '畅销爆品': 0, '稳健产品': 0, '潜力产品': 0, '淘汰产品': 0 };
             const unknownCategories = {};
-
+            
             data.forEach(item => {
                 let category = (item.category || '').toString().trim();
                 const originalCategory = category;
@@ -286,10 +511,10 @@
                         unknownCategories[originalCategory] = (unknownCategories[originalCategory] || 0) + 1;
                         const x = item.x, y = item.y;
                         const right = x >= xMed, top = y >= yMed;
-                        if (right && top) category = '畅销爆品';
-                        else if (!right && top) category = '潜力产品';
-                        else if (right && !top) category = '稳健产品';
-                        else category = '淘汰产品';
+                            if (right && top) category = '畅销爆品';
+                            else if (!right && top) category = '潜力产品';
+                            else if (right && !top) category = '稳健产品';
+                            else category = '淘汰产品';
                     }
                 } else {
                     const x = item.x, y = item.y;
@@ -382,13 +607,13 @@
                         const categoryZh = v[5] || '其他';
                         return `<div style="line-height: 1.8;">
   <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d;">${title}</div>
-  <div style="color: #5e6c84; font-size: 12px;">
-    <div>ASIN: <span style="color: #172b4d;">${v[4] || 'N/A'}</span></div>
-    <div>需求趋势: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(1)}</span></div>
-    <div>竞争强度: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(1)}</span></div>
-    <div>利润空间: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(1)}</span></div>
+                                <div style="color: #5e6c84; font-size: 12px;">
+                                    <div>ASIN: <span style="color: #172b4d;">${v[4] || 'N/A'}</span></div>
+                                    <div>需求趋势: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(1)}</span></div>
+                                    <div>竞争强度: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(1)}</span></div>
+                                    <div>利润空间: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(1)}</span></div>
     <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #dfe1e6;">分类: <span style="color: ${getCategoryColor(categoryZh) || '#5e6c84'}; font-weight: 600;">${categoryZh}</span></div>
-  </div>
+                                    </div>
 </div>`;
                     }
                 },
@@ -472,7 +697,7 @@
             window.addEventListener('resize', () => myChart.resize());
         }
 
-        window.onload = function() { loadData(); };
+        window.onload = function() { initPlugin(); };
     </script>
 </body>
 </html>
