@@ -293,46 +293,65 @@
                     const dashboard = bitable.dashboard || window.dashboard;
                     console.log('dashboard 对象:', dashboard ? '存在' : '不存在');
                     
+                    // 检查是否是创建状态（通过 URL 或 dashboard.state）
+                    const url = window.location.href;
+                    const isCreateFromUrl = url.includes('isCreate=1') || url.includes('isCreate=true');
+                    let state = null;
+                    
                     if (dashboard) {
-                        const state = dashboard.state;
-                        console.log('插件状态:', state);
-                        isCreateOrConfig = (state === 'create' || state === 'config');
+                        try {
+                            state = dashboard.state;
+                            console.log('插件状态:', state);
+                        } catch (e) {
+                            console.warn('无法获取 dashboard.state:', e);
+                        }
+                    }
+                    
+                    isCreateOrConfig = (state === 'create' || state === 'config' || isCreateFromUrl);
+                    console.log('isCreateOrConfig:', isCreateOrConfig, 'state:', state, 'isCreateFromUrl:', isCreateFromUrl);
+                    
+                    if (isCreateOrConfig) {
+                        // 创建/配置状态：显示配置面板
+                        console.log('进入创建/配置模式，显示配置面板');
+                        document.getElementById('main-container').classList.add('config-mode');
+                        document.getElementById('config-panel').style.display = 'flex';
+                        infoText.textContent = '插件配置模式：请查看左侧预览，确认后点击"确定"完成配置';
+                        statusText.textContent = '配置状态';
                         
-                        if (isCreateOrConfig) {
-                            // 创建/配置状态：显示配置面板
-                            document.getElementById('main-container').classList.add('config-mode');
-                            document.getElementById('config-panel').style.display = 'flex';
-                            infoText.textContent = '插件配置模式：请查看左侧预览，确认后点击"确定"完成配置';
-                            statusText.textContent = '配置状态';
-                            
-                            // 绑定"确定"按钮事件
-                            document.getElementById('save-config-btn').onclick = async () => {
+                        // 绑定"确定"按钮事件
+                        const saveBtn = document.getElementById('save-config-btn');
+                        if (saveBtn) {
+                            saveBtn.onclick = async () => {
                                 try {
-                                    await dashboard.saveConfig({});
-                                    statusText.textContent = '配置已保存';
-                                    statusText.style.color = '#36b37e';
+                                    if (dashboard && dashboard.saveConfig) {
+                                        await dashboard.saveConfig({});
+                                        statusText.textContent = '配置已保存';
+                                        statusText.style.color = '#36b37e';
+                                    } else {
+                                        // 如果没有 dashboard，至少显示成功消息
+                                        statusText.textContent = '配置已确认（无 dashboard 对象）';
+                                        statusText.style.color = '#36b37e';
+                                        console.warn('dashboard.saveConfig 不可用，仅显示确认消息');
+                                    }
                                 } catch (error) {
                                     console.error('保存配置失败:', error);
                                     statusText.textContent = '保存配置失败: ' + (error.message || '未知错误');
                                     statusText.style.color = '#de350b';
                                 }
                             };
-                            
-                            // 加载预览数据
-                            await loadData(true);
-                            return;
+                            console.log('已绑定"确定"按钮事件');
                         } else {
-                            // 展示状态：直接加载数据
-                            infoText.textContent = '飞书插件环境：使用 Base JS SDK 实时读取数据';
-                            statusText.textContent = '展示状态';
-                            await loadData(false);
-                            return;
+                            console.error('未找到 save-config-btn 按钮');
                         }
+                        
+                        // 加载预览数据
+                        await loadData(true);
+                        return;
                     } else {
-                        console.warn('dashboard 对象不存在，但检测到飞书环境，尝试直接使用 bitable.base');
-                        // 即使没有 dashboard，也尝试使用 bitable.base
+                        // 展示状态：直接加载数据
+                        console.log('进入展示模式');
                         infoText.textContent = '飞书插件环境：使用 Base JS SDK 实时读取数据';
-                        statusText.textContent = '展示状态（无 dashboard）';
+                        statusText.textContent = '展示状态';
                         await loadData(false);
                         return;
                     }
