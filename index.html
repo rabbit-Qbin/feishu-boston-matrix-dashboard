@@ -198,6 +198,7 @@
             const statusText = document.getElementById('status-text');
             statusDiv.innerHTML = '';
             statusText.textContent = '正在加载数据...';
+            statusText.style.color = '#5e6c84';
             
             try {
                 // 检查 bitable 是否可用
@@ -209,15 +210,20 @@
                     throw new Error('bitable.base 不可用，请确保在飞书 Dashboard 插件环境中运行');
                 }
                 
+                statusText.textContent = '正在获取 Base 对象...';
                 // 获取当前 Base
                 const base = bitable.base;
+                console.log('✓ 获取到 Base 对象');
                 
+                statusText.textContent = `正在获取表 (ID: ${TABLE_ID})...`;
                 // 获取表
                 const table = await base.getTable(TABLE_ID);
                 if (!table) {
                     throw new Error(`未找到表 ID: ${TABLE_ID}`);
                 }
+                console.log('✓ 获取到表对象');
                 
+                statusText.textContent = '正在获取字段列表...';
                 // 获取字段列表
                 const fieldList = await table.getFieldList();
                 const fieldMap = {};
@@ -225,30 +231,44 @@
                     const fieldName = await field.getName();
                     fieldMap[fieldName] = field;
                 }
+                console.log('✓ 获取到字段列表，共', Object.keys(fieldMap).length, '个字段');
+                console.log('字段列表:', Object.keys(fieldMap));
                 
                 // 检查必需字段
                 const requiredFields = [FIELD_NAMES.demand, FIELD_NAMES.competition, FIELD_NAMES.profit, FIELD_NAMES.category];
                 const missingFields = requiredFields.filter(f => !fieldMap[f]);
                 if (missingFields.length > 0) {
-                    throw new Error(`缺少必需字段: ${missingFields.join(', ')}`);
+                    throw new Error(`缺少必需字段: ${missingFields.join(', ')}。可用字段: ${Object.keys(fieldMap).join(', ')}`);
                 }
+                console.log('✓ 必需字段检查通过');
                 
+                statusText.textContent = '正在获取记录列表...';
                 // 获取记录列表
                 const recordList = await table.getRecordList();
-                console.log(`获取到 ${recordList.length} 条记录`);
+                console.log(`✓ 获取到 ${recordList.length} 条记录`);
+                
+                if (recordList.length === 0) {
+                    statusText.textContent = '未找到任何记录';
+                    statusText.style.color = '#ff991f';
+                    return;
+                }
                 
                 // 处理数据
                 const data = [];
                 const categoryOptionMap = {};
                 
+                statusText.textContent = '正在处理分类字段...';
                 // 获取分类字段的选项映射（如果是查找引用字段，需要特殊处理）
                 const categoryField = fieldMap[FIELD_NAMES.category];
                 const categoryFieldType = await categoryField.getType();
+                console.log('分类字段类型:', categoryFieldType);
                 
                 // 如果是查找引用字段，需要获取被引用字段的选项
                 if (categoryFieldType === 19) { // 19 = Lookup
+                    statusText.textContent = '正在获取查找引用字段的选项...';
                     // 获取被引用的表和字段
                     const lookupInfo = await categoryField.getLookupInfo();
+                    console.log('查找引用信息:', lookupInfo);
                     if (lookupInfo) {
                         const refTable = await base.getTable(lookupInfo.targetTableId);
                         const refField = await refTable.getField(lookupInfo.targetFieldId);
@@ -262,16 +282,23 @@
                         }
                     }
                 } else if (categoryFieldType === 3) { // 3 = SingleSelect
+                    statusText.textContent = '正在获取单选字段的选项...';
                     const options = await categoryField.getOptions();
                     for (const opt of options) {
                         categoryOptionMap[opt.id] = opt.name;
                     }
                 }
                 
-                console.log('分类选项映射:', categoryOptionMap);
+                console.log('✓ 分类选项映射:', categoryOptionMap);
                 
+                statusText.textContent = `正在处理 ${recordList.length} 条记录...`;
                 // 遍历记录，提取数据
+                let processedCount = 0;
                 for (const record of recordList) {
+                    processedCount++;
+                    if (processedCount % 50 === 0) {
+                        statusText.textContent = `正在处理记录 ${processedCount}/${recordList.length}...`;
+                    }
                     try {
                         // 获取各字段值
                         const demandValue = await record.getCellValue(fieldMap[FIELD_NAMES.demand].id);
@@ -328,22 +355,36 @@
                     }
                 }
                 
-                console.log(`处理完成，有效数据: ${data.length} 条`);
+                console.log(`✓ 处理完成，有效数据: ${data.length} 条`);
                 
                 if (data.length > 0) {
-                    statusText.textContent = `✓ 成功加载 ${data.length} 条数据`;
+                    statusText.textContent = `✓ 成功加载 ${data.length} 条数据，正在渲染图表...`;
                     statusText.style.color = '#36b37e';
                     renderChart(data);
+                    statusText.textContent = `✓ 成功加载 ${data.length} 条数据`;
                 } else {
-                    statusText.textContent = '未找到有效数据';
+                    statusText.textContent = '未找到有效数据（所有记录的数据格式可能不正确）';
                     statusText.style.color = '#ff991f';
+                    statusDiv.innerHTML = `<div class="error">未找到有效数据<br/>请检查表中的数据格式是否正确</div>`;
                 }
                 
             } catch (error) {
                 console.error('加载数据失败:', error);
                 statusText.textContent = `加载失败: ${error.message}`;
                 statusText.style.color = '#de350b';
-                statusDiv.innerHTML = `<div class="error">错误: ${error.message}<br/>请确保在飞书环境中运行此插件</div>`;
+                statusDiv.innerHTML = `<div class="error">
+                    <strong>错误:</strong> ${error.message}<br/>
+                    <br/>
+                    <strong>调试信息:</strong><br/>
+                    - 表ID: ${TABLE_ID}<br/>
+                    - 必需字段: ${Object.values(FIELD_NAMES).join(', ')}<br/>
+                    <br/>
+                    请检查：<br/>
+                    1. 是否在飞书 Dashboard 插件环境中运行<br/>
+                    2. 表ID是否正确<br/>
+                    3. 字段名称是否匹配<br/>
+                    4. 打开浏览器控制台查看详细错误信息
+                </div>`;
             }
         }
 
@@ -857,12 +898,41 @@
         // 飞书插件初始化
         // 按照官方模板的方式：检查 dashboard 对象和状态
         async function initPlugin() {
+            const statusText = document.getElementById('status-text');
+            
             try {
+                // 等待 SDK 加载（最多等待 3 秒）
+                let retryCount = 0;
+                const maxRetries = 30; // 3秒，每100ms检查一次
+                
+                while (retryCount < maxRetries) {
+                    if (typeof bitable !== 'undefined' && bitable.base) {
+                        break;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    retryCount++;
+                    if (retryCount % 10 === 0) {
+                        statusText.textContent = `等待 SDK 加载... (${retryCount * 100}ms)`;
+                    }
+                }
+                
                 // 检查 bitable 和 dashboard 是否已加载
-                if (typeof bitable === 'undefined' || !bitable.base) {
-                    console.warn('Base JS SDK 未加载');
+                if (typeof bitable === 'undefined') {
+                    statusText.textContent = '错误：Base JS SDK 未加载，请检查网络连接';
+                    statusText.style.color = '#de350b';
+                    console.error('Base JS SDK 未加载');
                     return;
                 }
+                
+                if (!bitable.base) {
+                    statusText.textContent = '错误：bitable.base 不可用，请确保在飞书 Dashboard 插件环境中运行';
+                    statusText.style.color = '#de350b';
+                    console.error('bitable.base 不可用');
+                    return;
+                }
+                
+                console.log('✓ Base JS SDK 已加载');
+                statusText.textContent = 'SDK 已加载，开始获取数据...';
                 
                 // 检查 dashboard 对象（可能直接可用，也可能在 bitable 下）
                 const dashboard = window.dashboard || bitable.dashboard;
@@ -875,14 +945,21 @@
                 }
                 
                 // 检查插件状态
-                const state = dashboard.state;
-                console.log('插件状态:', state);
+                let state;
+                try {
+                    state = dashboard.state;
+                    console.log('插件状态:', state);
+                } catch (e) {
+                    console.warn('无法获取插件状态，直接加载数据:', e);
+                    loadData();
+                    return;
+                }
                 
                 // 如果是创建状态，不加载数据
                 if (state === 'create') {
                     console.log('插件处于创建状态');
-                    document.getElementById('status-text').textContent = '请完成插件配置';
-                    document.getElementById('status-text').style.color = '#ff991f';
+                    statusText.textContent = '请完成插件配置';
+                    statusText.style.color = '#ff991f';
                     return;
                 }
                 
@@ -892,8 +969,13 @@
                 
             } catch (error) {
                 console.error('插件初始化失败:', error);
+                statusText.textContent = `初始化失败: ${error.message}`;
+                statusText.style.color = '#de350b';
                 // 如果出错，尝试直接加载数据
-                loadData();
+                setTimeout(() => {
+                    console.log('尝试直接加载数据...');
+                    loadData();
+                }, 1000);
             }
         }
         
