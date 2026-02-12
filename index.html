@@ -36,6 +36,55 @@
             border-radius: 8px;
             padding: 24px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        
+        /* 创建状态下的布局 */
+        .container.config-mode {
+            display: flex;
+            gap: 0;
+            padding: 0;
+            max-width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+        }
+        
+        .main-content {
+            flex: 1;
+            overflow: auto;
+            padding: 24px;
+        }
+        
+        .config-panel {
+            width: 320px;
+            background: #fafbfc;
+            border-left: 1px solid var(--border);
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .config-panel h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        
+        .config-panel .welcome-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-sub);
+            margin-bottom: 20px;
+        }
+        
+        .config-panel .save-btn {
+            margin-top: auto;
+            width: 100%;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
         }
 
         .header {
@@ -130,17 +179,34 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>产品分类四象限（波士顿矩阵）</h1>
+    <div class="container" id="main-container">
+        <div class="main-content">
+            <div class="header">
+                <h1>产品分类四象限（波士顿矩阵）</h1>
+            </div>
+            
+            <div class="info">
+                <span id="status-text" style="color: var(--text-sub);">正在加载数据...</span>
+            </div>
+            
+            <div id="status"></div>
+            <div id="chart"></div>
         </div>
         
-        <div class="info">
-            <span id="status-text" style="color: var(--text-sub);">正在加载数据...</span>
+        <!-- 配置面板（仅在创建/配置状态显示） -->
+        <div class="config-panel" id="config-panel" style="display: none;">
+            <h3>插件配置</h3>
+            <div class="welcome-text">
+                <strong>欢迎使用产品分类四象限插件！</strong><br/><br/>
+                <strong>插件说明：</strong><br/>
+                • 自动从指定表加载数据<br/>
+                • 根据需求趋势和竞争强度绘制波士顿矩阵<br/>
+                • 气泡大小和颜色由利润空间决定<br/><br/>
+                左侧是图表预览效果。<br/>
+                确认无误后，点击下方"确定"按钮完成配置。
+            </div>
+            <button id="save-config-btn" class="save-btn">确定</button>
         </div>
-        
-        <div id="status"></div>
-        <div id="chart"></div>
     </div>
 
     <script>
@@ -217,7 +283,8 @@
         };
 
         // 使用 Base JS SDK 加载数据
-        async function loadData() {
+        // isPreview: true 表示创建状态，使用 getPreviewData(); false 表示展示状态，使用完整数据
+        async function loadData(isPreview = false) {
             const statusDiv = document.getElementById('status');
             const statusText = document.getElementById('status-text');
             statusDiv.innerHTML = '';
@@ -287,8 +354,22 @@
                 console.log('✓ 必需字段检查通过');
                 
                 statusText.textContent = '正在获取记录列表...';
-                // 获取记录列表
-                const recordList = await table.getRecordList();
+                // 获取记录列表（创建状态使用预览数据，展示状态使用完整数据）
+                let recordList;
+                if (isPreview && dashboard && dashboard.getPreviewData) {
+                    console.log('使用预览数据模式（创建状态）');
+                    try {
+                        const previewData = await dashboard.getPreviewData();
+                        console.log('预览数据:', previewData);
+                        // getPreviewData() 可能返回 { records: [...] } 或直接返回记录数组
+                        recordList = previewData.records || previewData || [];
+                    } catch (e) {
+                        console.warn('获取预览数据失败，尝试使用完整数据:', e);
+                        recordList = await table.getRecordList();
+                    }
+                } else {
+                    recordList = await table.getRecordList();
+                }
                 console.log(`✓ 获取到 ${recordList.length} 条记录`);
                 
                 if (recordList.length === 0) {
@@ -1022,86 +1103,80 @@
                 }
                 
                 // 检查 bitable 是否已加载
-                // 检查是否在创建状态（通过 URL 参数）
-                const isCreate = window.location.href.includes('isCreate=1') || window.location.href.includes('isCreate=true');
+                // 检查 dashboard 对象（可能直接可用，也可能在 bitable 下）
+                const dashboard = window.dashboard || (bitable ? bitable.dashboard : null);
                 
-                if (isCreate || typeof bitable === 'undefined') {
-                    // 创建状态：显示友好提示（SDK 在创建状态下可能不完全加载，这是正常的）
-                if (isCreate) {
-                    statusText.textContent = '插件配置中';
-                    statusText.style.color = '#ff991f';
-                    statusDiv.innerHTML = `
-                        <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
-                            <strong>欢迎使用产品分类四象限插件！</strong><br/>
-                            <br/>
-                            <strong>插件说明：</strong><br/>
-                            • 自动从表 ${TABLE_ID} 加载数据<br/>
-                            • 根据需求趋势得分和竞争强度得分绘制波士顿矩阵<br/>
-                            • 气泡大小和颜色深浅由利润空间得分决定<br/>
-                            <br/>
-                            <button id="save-config-btn" style="
-                                background: #00b96b;
-                                color: white;
-                                border: none;
-                                padding: 10px 24px;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-size: 14px;
-                                font-weight: 600;
-                                margin-top: 12px;
-                            ">
-                                开始使用
-                            </button>
-                            <br/>
-                            <br/>
-                            <em style="font-size: 0.9em; color: #5e6c84;">点击"开始使用"后，插件将自动加载数据并显示图表</em>
-                        </div>
-                    `;
+                // 检查插件状态
+                let state;
+                let isCreateOrConfig = false;
+                
+                if (dashboard) {
+                    try {
+                        state = dashboard.state;
+                        console.log('插件状态:', state);
+                        // state 可能是 'create', 'config', 'display'
+                        isCreateOrConfig = (state === 'create' || state === 'config');
+                    } catch (e) {
+                        console.warn('无法获取插件状态:', e);
+                    }
+                } else {
+                    // 兜底：通过 URL 参数判断
+                    const isCreate = window.location.href.includes('isCreate=1') || window.location.href.includes('isCreate=true');
+                    if (isCreate) {
+                        isCreateOrConfig = true;
+                        state = 'create';
+                    }
+                }
+                
+                // 如果是创建/配置状态，显示配置面板
+                if (isCreateOrConfig) {
+                    console.log('插件处于创建/配置状态，显示配置面板');
+                    const container = document.getElementById('main-container');
+                    const configPanel = document.getElementById('config-panel');
+                    
+                    if (container) {
+                        container.classList.add('config-mode');
+                    }
+                    if (configPanel) {
+                        configPanel.style.display = 'flex';
+                    }
                     
                     // 绑定保存按钮事件
-                    setTimeout(() => {
-                        const saveBtn = document.getElementById('save-config-btn');
-                        if (saveBtn) {
-                            saveBtn.onclick = async () => {
-                                try {
-                                    saveBtn.textContent = '保存中...';
-                                    saveBtn.disabled = true;
+                    const saveBtn = document.getElementById('save-config-btn');
+                    if (saveBtn) {
+                        saveBtn.onclick = async () => {
+                            try {
+                                saveBtn.textContent = '保存中...';
+                                saveBtn.disabled = true;
+                                
+                                // 调用 dashboard.saveConfig() 保存配置
+                                if (dashboard && dashboard.saveConfig) {
+                                    await dashboard.saveConfig({
+                                        customConfig: {
+                                            tableId: TABLE_ID,
+                                            fields: FIELD_NAMES
+                                        },
+                                        dataConditions: []
+                                    });
+                                    console.log('✓ 配置已保存');
                                     
-                                    // 检查 dashboard API 是否可用
-                                    if (typeof bitable !== 'undefined' && bitable.dashboard) {
-                                        await bitable.dashboard.saveConfig({
-                                            customConfig: {
-                                                tableId: TABLE_ID,
-                                                fields: FIELD_NAMES
-                                            },
-                                            dataConditions: []
-                                        });
-                                        console.log('✓ 配置已保存');
-                                        
-                                        statusText.textContent = '配置已保存，正在加载数据...';
-                                        statusText.style.color = '#00b96b';
-                                        statusDiv.innerHTML = `
-                                            <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
-                                                <strong>配置已保存！</strong><br/>
-                                                插件将在几秒钟后自动刷新并显示数据...<br/>
-                                                <br/>
-                                                <em style="font-size: 0.9em;">如果没有自动刷新，请手动刷新页面</em>
-                                            </div>
-                                        `;
-                                    } else {
-                                        throw new Error('dashboard API 不可用');
-                                    }
-                                } catch (error) {
-                                    console.error('保存配置失败:', error);
-                                    saveBtn.textContent = '保存失败，请重试';
-                                    saveBtn.disabled = false;
-                                    alert('保存配置失败: ' + error.message);
+                                    statusText.textContent = '✓ 配置已保存！插件将自动刷新...';
+                                    statusText.style.color = '#00b96b';
+                                } else {
+                                    throw new Error('dashboard.saveConfig 不可用');
                                 }
-                            };
-                        }
-                    }, 100);
+                            } catch (error) {
+                                console.error('保存配置失败:', error);
+                                saveBtn.textContent = '保存失败，请重试';
+                                saveBtn.disabled = false;
+                                statusText.textContent = '保存失败: ' + error.message;
+                                statusText.style.color = '#de350b';
+                            }
+                        };
+                    }
                     
-                    console.log('插件处于创建状态（isCreate=1），等待用户点击"开始使用"');
+                    // 创建状态下加载预览数据
+                    loadData(true); // 传入 true 表示使用预览数据
                     return;
                 }
                     
@@ -1142,6 +1217,24 @@
                 }
                 
                 if (!bitable.base) {
+                    // 如果是预览模式（创建状态），可能 base 还没加载，这是正常的
+                    if (isPreview) {
+                        console.log('预览模式下 bitable.base 不可用，显示空图表');
+                        statusText.textContent = '等待配置完成后加载数据';
+                        statusText.style.color = '#ff991f';
+                        statusDiv.innerHTML = `
+                            <div class="error" style="background: #fff4e6; color: #d46b08;">
+                                <strong>提示：</strong>当前处于配置状态，暂无法加载数据<br/>
+                                <br/>
+                                请点击右侧的<strong>"确定"</strong>按钮完成配置，配置完成后将自动加载数据并显示图表。
+                            </div>
+                        `;
+                        // 显示一个空图表
+                        renderChart([]);
+                        return;
+                    }
+                    
+                    // 展示状态下 base 不可用才是真正的错误
                     statusText.textContent = '错误：bitable.base 不可用';
                     statusText.style.color = '#de350b';
                     statusDiv.innerHTML = `
