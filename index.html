@@ -355,7 +355,7 @@
                     await loadLocalData();
                     return;
                 }
-
+                
                 // 首先检查是否是创建/配置状态
                 const url = window.location.href;
                 const isCreateFromUrl = url.includes('isCreate=1') || url.includes('isCreate=true');
@@ -384,6 +384,11 @@
                 
                 // 尝试使用 SDK 加载数据
                 try {
+                    // 检查 bitable 是否加载
+                    if (typeof bitable === 'undefined') {
+                        throw new Error('SDK 未加载');
+                    }
+                    
                     // 优先使用 bitable.dashboard，其次使用 window.dashboard
                     dashboard = bitable.dashboard || window.dashboard;
                     console.log('dashboard 对象:', dashboard ? '存在' : '不存在');
@@ -400,25 +405,33 @@
                     return;
                 } catch (error) {
                     // SDK 加载失败，尝试回退到本地 API
-                    console.warn('SDK 调用失败，尝试回退到本地 API:', error);
+                    console.warn('SDK 加载失败，尝试回退到本地 API:', error);
                     useFallbackAPI = true;
                     
                     const statusDiv = document.getElementById('status');
-                    statusText.textContent = '⚠️ SDK 调用失败，使用本地 API';
+                    statusText.textContent = '⚠️ SDK 失败，使用本地 API';
                     statusText.style.color = '#ff991f';
                     
-                    infoText.innerHTML = `⚠️ 飞书 SDK 调用失败，已回退到本地 API 模式<br/>
+                    // 更新提示信息
+                    infoText.innerHTML = `⚠️ 飞书 SDK 加载失败，已回退到本地 API 模式<br/>
                         <small>错误: ${error.message}</small><br/>
                         <small>数据源: <code>http://localhost:8000/api/table4/scatter-data</code></small>`;
                     
+                    // 显示警告
                     statusDiv.innerHTML = `<div class="error">
-                        ⚠️ SDK 调用失败: ${error.message}<br/>
+                        ⚠️ SDK 加载失败: ${error.message}<br/>
                         已自动切换到本地 Flask API 模式<br/>
                         <br/>
                         <strong>请确保：</strong><br/>
-                        1. Flask 后端正在运行 (端口 8000)
+                        1. Flask 后端正在运行 (端口 8000)<br/>
+                        2. 如需使用 SDK，请刷新页面重试
                     </div>`;
                     
+                    // SDK 失败时，不显示按钮，等待飞书自动显示
+                    console.log('SDK 失败，飞书环境会自动显示"确定"按钮（如果正确识别）');
+                    
+                    // 加载本地 API 数据
+                    console.log('使用本地 API 加载数据...');
                     await loadLocalData();
                 }
             }
@@ -432,7 +445,7 @@
             document.getElementById('reload-btn').style.display = 'block';
             await loadLocalData();
         }
-
+        
         // 加载本地 Flask API 数据
         async function loadLocalData() {
             const statusDiv = document.getElementById('status');
@@ -478,7 +491,7 @@
             statusText.style.color = '#de350b';
             statusDiv.innerHTML = `<div class="error">请求失败: 无法连接到后端服务。请确保后端服务正在运行。<br/>尝试的端口: ${PORTS.join(', ')}<br/>最后错误: ${lastError ? lastError.message : '未知错误'}</div>`;
         }
-
+        
         // 使用 Base JS SDK 加载数据
         // isPreview: true 表示创建状态，使用 getPreviewData(); false 表示展示状态，使用完整数据
         async function loadData(isPreview = false) {
@@ -577,7 +590,7 @@
                 statusText.textContent = '加载失败: ' + (error.message || '未知错误');
                 statusText.style.color = '#de350b';
                 statusDiv.innerHTML = `<div class="error">数据加载失败: ${error.message || '未知错误'}<br/>请检查表4是否存在，以及字段名称是否正确</div>`;
-                throw error;
+                throw error; // 抛出错误，让 initPlugin 捕获并处理兜底
             }
         }
 
@@ -590,12 +603,265 @@
                 return;
             }
 
-            // ... 图表渲染逻辑保持不变 ...
+            const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
+            const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
+            const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
+            const sizeMin = Math.min(...sizes);
+            const sizeMax = Math.max(...sizes);
+            const sortedSizes = sizes.slice().sort((a, b) => a - b);
+            const len = sortedSizes.length;
+            const q20 = len ? sortedSizes[Math.floor(len * 0.2)] : sizeMin;
+            const q40 = len ? sortedSizes[Math.floor(len * 0.4)] : sizeMin + (sizeMax - sizeMin) * 0.4;
+            const q60 = len ? sortedSizes[Math.floor(len * 0.6)] : sizeMin + (sizeMax - sizeMin) * 0.6;
+            const q80 = len ? sortedSizes[Math.floor(len * 0.8)] : sizeMin + (sizeMax - sizeMin) * 0.8;
+            const q90 = len ? sortedSizes[Math.floor(len * 0.9)] : sizeMax;
+            
+            const xMed = median(xs);
+            const yMed = median(ys);
+            const xMinRaw = Math.min(...xs);
+            const xMaxRaw = Math.max(...xs);
+            const yMinRaw = Math.min(...ys);
+            const yMaxRaw = Math.max(...ys);
+            const xMin = roundDownTo10(xMinRaw);
+            const xMax = roundUpTo10(xMaxRaw);
+            const yMin = roundDownTo10(yMinRaw);
+            const yMax = roundUpTo10(yMaxRaw);
+
+            function getProfitBand(score) {
+                if (!isFinite(score)) return 0;
+                if (score <= q20) return 0;
+                if (score <= q40) return 1;
+                if (score <= q60) return 2;
+                if (score <= q80) return 3;
+                return 4;
+            }
+            function getBandAlpha(band) {
+                const alphas = [0.3, 0.5, 0.7, 0.85, 1.0];
+                return alphas[Math.max(0, Math.min(alphas.length - 1, band))];
+            }
+            function withAlpha(rgba, alpha) {
+                if (typeof rgba !== 'string') return rgba;
+                const m = rgba.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
+                if (!m) return rgba;
+                return `rgba(${m[1]}, ${alpha})`;
+            }
+            function getSizeBand(score) {
+                if (!isFinite(score)) return 0;
+                if (score <= q80) return 0;
+                if (score <= q90) return 1;
+                return 2;
+            }
+
+            const categoryMap = {};
+            const categoryCounts = { '畅销爆品': 0, '稳健产品': 0, '潜力产品': 0, '淘汰产品': 0 };
+            const unknownCategories = {};
+            
+            data.forEach(item => {
+                let category = (item.category || '').toString().trim();
+                const originalCategory = category;
+                if (categoryAlias[category]) {
+                    category = categoryAlias[category];
+                } else if (category) {
+                    let matched = false;
+                    for (const key in categoryAlias) {
+                        if (category.includes(key) || key.includes(category)) {
+                            category = categoryAlias[key]; matched = true; break;
+                        }
+                    }
+                    if (!matched) {
+                        unknownCategories[originalCategory] = (unknownCategories[originalCategory] || 0) + 1;
+                        const x = item.x, y = item.y;
+                        const right = x >= xMed, top = y >= yMed;
+                            if (right && top) category = '畅销爆品';
+                            else if (!right && top) category = '潜力产品';
+                            else if (right && !top) category = '稳健产品';
+                            else category = '淘汰产品';
+                    }
+                } else {
+                    const x = item.x, y = item.y;
+                    const right = x >= xMed, top = y >= yMed;
+                    if (right && top) category = '畅销爆品';
+                    else if (!right && top) category = '潜力产品';
+                    else if (right && !top) category = '稳健产品';
+                    else category = '淘汰产品';
+                }
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                if (!categoryMap[category]) categoryMap[category] = [];
+                categoryMap[category].push([
+                    item.x, item.y, item.size, item.title, item.asin, category
+                ]);
+            });
+
+            const CATEGORY_ORDER = ['畅销爆品', '稳健产品', '潜力产品', '淘汰产品'];
+            const series = CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0).map(category => {
+                return {
+                    name: category,
+                    type: 'scatter',
+                    data: categoryMap[category],
+                    symbolSize: (data) => {
+                        const profitScore = data[2];
+                        if (!isFinite(profitScore) || !isFinite(sizeMin) || !isFinite(sizeMax)) return 12;
+                        const sizeBand = getSizeBand(profitScore);
+                        let base, span, bandMin, bandMax;
+                        if (sizeBand === 0) {
+                            base = 16; span = 6; bandMin = sizeMin; bandMax = q80;
+                        } else if (sizeBand === 1) {
+                            base = 28; span = 8; bandMin = q80; bandMax = q90;
+                        } else {
+                            base = 46; span = 14; bandMin = q90; bandMax = sizeMax;
+                        }
+                        const range = (bandMax - bandMin) || 1;
+                        const t = Math.max(0, Math.min(1, (profitScore - bandMin) / range));
+                        const size = base + (t - 0.5) * span;
+                        return Math.max(6, Math.min(52, size));
+                    },
+                    itemStyle: {
+                        color: (params) => {
+                            const v = params.value;
+                            const profitScore = v[2];
+                            const band = getProfitBand(profitScore);
+                            const alpha = getBandAlpha(band);
+                            const baseColor = getCategoryColor(v[5] || category);
+                            return withAlpha(baseColor, alpha);
+                        },
+                        shadowBlur: 1,
+                        shadowColor: 'rgba(0,0,0,0.08)',
+                        borderColor: '#fff',
+                        borderWidth: 1.5
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            color: (params) => {
+                                const v = params.value;
+                                const profitScore = v[2];
+                                const band = getProfitBand(profitScore);
+                                const alpha = Math.min(1, getBandAlpha(band) + 0.15);
+                                const baseColor = getCategoryColor(v[5] || category);
+                                return withAlpha(baseColor, alpha);
+                            },
+                            shadowBlur: 8,
+                            shadowColor: 'rgba(0,0,0,0.25)',
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }
+                    }
+                };
+            });
+
+            const pct = (n) => data.length ? `${(n * 100 / data.length).toFixed(1)}%` : '0.0%';
+
+            const option = {
+                grid: { left: '40', right: '40', top: '70', bottom: '60', containLabel: true },
+                title: {
+                    text: '产品分类四象限（需求趋势 × 竞争强度）',
+                    left: 'center', top: 20,
+                    textStyle: { fontSize: 16, fontWeight: 600, color: '#172b4d' }
+                },
+                tooltip: {
+                    padding: 10,
+                    backgroundColor: 'rgba(255,255,255,0.95)',
+                    borderColor: '#dfe1e6', borderWidth: 1,
+                    textStyle: { color: '#172b4d', fontSize: 13 },
+                    formatter: (params) => {
+                        const v = params.value;
+                        const title = (v[3] || '未知').length > 60 ? (v[3].substring(0, 60) + '...') : (v[3] || '未知');
+                        const categoryZh = v[5] || '其他';
+                        return `<div style="line-height: 1.8;">
+  <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d;">${title}</div>
+                                <div style="color: #5e6c84; font-size: 12px;">
+                                    <div>ASIN: <span style="color: #172b4d;">${v[4] || 'N/A'}</span></div>
+                                    <div>需求趋势: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(1)}</span></div>
+                                    <div>竞争强度: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(1)}</span></div>
+                                    <div>利润空间: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(1)}</span></div>
+    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #dfe1e6;">分类: <span style="color: ${getCategoryColor(categoryZh) || '#5e6c84'}; font-weight: 600;">${categoryZh}</span></div>
+                                    </div>
+</div>`;
+                    }
+                },
+                xAxis: {
+                    type: 'value', name: '需求趋势得分', nameGap: 35, nameLocation: 'middle',
+                    nameTextStyle: { fontSize: 13, color: '#5e6c84', fontWeight: 500 },
+                    min: xMin, max: xMax,
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e8e8e8', width: 1 } },
+                    axisLine: { lineStyle: { color: '#888' } },
+                    axisLabel: { color: '#5e6c84', fontSize: 12 }
+                },
+                yAxis: {
+                    type: 'value', name: '竞争强度得分', nameGap: 35, nameLocation: 'middle',
+                    nameTextStyle: { fontSize: 13, color: '#5e6c84', fontWeight: 500 },
+                    min: yMin, max: yMax,
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e8e8e8', width: 1 } },
+                    axisLine: { lineStyle: { color: '#888' } },
+                    axisLabel: { color: '#5e6c84', fontSize: 12 }
+                },
+                graphic: [
+                    {
+                        type: 'group', left: '70', top: '60',
+                        children: [
+                            {
+                                type: 'rect', shape: { width: 210, height: 140, r: 6 },
+                                style: {
+                                    fill: 'rgba(255,255,255,0.88)', stroke: '#dfe1e6', lineWidth: 1,
+                                    shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.08)'
+                                }
+                            },
+                            {
+                                type: 'text', left: 10, top: 10,
+                                style: {
+                                    text:`总产品：${data.length}
+分界线：需求趋势=${xMed.toFixed(1)}，竞争强度=${yMed.toFixed(1)}
+
+四象限分布：
+畅销爆品：${categoryCounts['畅销爆品']}（${pct(categoryCounts['畅销爆品'])}）
+稳健产品：${categoryCounts['稳健产品']}（${pct(categoryCounts['稳健产品'])}）
+潜力产品：${categoryCounts['潜力产品']}（${pct(categoryCounts['潜力产品'])}）
+淘汰产品：${categoryCounts['淘汰产品']}（${pct(categoryCounts['淘汰产品'])}）`,
+                                    fill: '#172b4d', font: '10px Inter, sans-serif', lineHeight: 16, opacity: 0.95
+                                }
+                            }
+                        ]
+                    }
+                ],
+                legend: {
+                    data: CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0),
+                    bottom: 10, icon: 'circle', itemWidth: 10, itemHeight: 10, itemGap: 20,
+                    textStyle: { fontSize: 12, color: '#5e6c84' },
+                    formatter: (name) => `${name} (${(categoryCounts && categoryCounts[name]) ? categoryCounts[name] : 0})`
+                },
+                series: [
+                    {
+                        name: '__areas__', type: 'scatter', data: [], silent: true, tooltip: { show: false }, z: 0,
+                        markArea: {
+                            silent: true, itemStyle: { opacity: 0.14 },
+                            data: [
+                                [ { xAxis: xMin, yAxis: yMax, itemStyle: { color: 'rgba(255, 193, 7, 0.30)' } }, { xAxis: xMed, yAxis: yMed } ],
+                                [ { xAxis: xMed, yAxis: yMax, itemStyle: { color: 'rgba(214, 88, 98, 0.30)' } }, { xAxis: xMax, yAxis: yMed } ],
+                                [ { xAxis: xMin, yAxis: yMed, itemStyle: { color: 'rgba(92, 186, 120, 0.26)' } }, { xAxis: xMed, yAxis: yMin } ],
+                                [ { xAxis: xMed, yAxis: yMed, itemStyle: { color: 'rgba(97, 131, 217, 0.26)' } }, { xAxis: xMax, yAxis: yMin } ]
+                            ]
+                        }
+                    },
+                    ...series,
+                    {
+                        name: '__median__', type: 'scatter', data: [], silent: true, tooltip: { show: false },
+                        markLine: {
+                            silent: true, symbol: ['none', 'none'],
+                            lineStyle: { color: '#666', type: 'dashed', width: 1.5, opacity: 0.7 },
+                            label: { show: false }, data: [{ xAxis: xMed }, { yAxis: yMed }]
+                        },
+                        z: 999, zlevel: 10
+                    }
+                ]
+            };
+
+            myChart.setOption(option);
+            window.addEventListener('resize', () => myChart.resize());
         }
 
-        // 等待 DOM 加载后再初始化
+        // 等待 DOM 和 SDK 完全加载后再初始化
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
+                // 给 SDK 额外时间加载
                 setTimeout(initPlugin, 100);
             });
         } else {
