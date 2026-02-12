@@ -219,15 +219,33 @@
             console.log('当前 URL:', window.location.href);
             console.log('bitable 是否存在:', typeof bitable !== 'undefined');
             
-            // 先通过 URL 判断是否在飞书环境中
+            // 检测方式1：URL 是否包含飞书域名
             const url = window.location.href;
             const isInFeishuDomain = url.includes('feishu.cn') || url.includes('larkoffice.com') || 
                                       url.includes('bytedance.net') || url.includes('larksuite.com');
             
-            console.log('是否在飞书域名:', isInFeishuDomain);
+            // 检测方式2：是否在 iframe 中（飞书插件通常在 iframe 中加载）
+            const isInIframe = window.self !== window.top;
             
-            // 如果在飞书域名或者 SDK 已加载，就认为是飞书环境
-            if (isInFeishuDomain || (typeof bitable !== 'undefined' && (bitable.base || bitable.dashboard))) {
+            // 检测方式3：检查 parent 的域名
+            let parentInFeishu = false;
+            try {
+                if (isInIframe && window.parent) {
+                    const parentUrl = window.parent.location.href;
+                    parentInFeishu = parentUrl.includes('feishu.cn') || parentUrl.includes('larkoffice.com');
+                }
+            } catch (e) {
+                // 跨域访问会报错，但这恰好说明可能在飞书 iframe 中
+                console.log('无法访问 parent URL（可能在飞书 iframe 中）:', e.message);
+                parentInFeishu = isInIframe; // 如果在 iframe 且跨域，很可能是飞书环境
+            }
+            
+            console.log('是否在飞书域名:', isInFeishuDomain);
+            console.log('是否在 iframe 中:', isInIframe);
+            console.log('parent 是否在飞书:', parentInFeishu);
+            
+            // 综合判断：在飞书域名、或在 iframe 中、或 SDK 已加载
+            if (isInFeishuDomain || parentInFeishu || (typeof bitable !== 'undefined' && (bitable.base || bitable.dashboard))) {
                 isFeishuEnv = true;
                 console.log('确认为飞书环境');
                 
@@ -273,7 +291,7 @@
                     console.log('isCreateOrConfig:', isCreateOrConfig, 'state:', state, 'isCreateFromUrl:', isCreateFromUrl);
                     
                     // 如果没有明确的状态，但在飞书环境中，也显示配置面板（兜底逻辑）
-                    if (!state && !isCreateFromUrl && isInFeishuDomain) {
+                    if (!state && !isCreateFromUrl) {
                         console.log('飞书环境中无法确定状态，默认显示配置面板');
                         isCreateOrConfig = true;
                     }
