@@ -1027,24 +1027,83 @@
                 
                 if (isCreate || typeof bitable === 'undefined') {
                     // 创建状态：显示友好提示（SDK 在创建状态下可能不完全加载，这是正常的）
-                    if (isCreate) {
-                        statusText.textContent = '插件配置中';
-                        statusText.style.color = '#ff991f';
-                        statusDiv.innerHTML = `
-                            <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
-                                <strong>欢迎使用产品分类四象限插件！</strong><br/>
-                                <br/>
-                                <strong>下一步操作：</strong><br/>
-                                1. 点击弹窗底部或飞书界面底部的<strong>"添加"或"确定"</strong>按钮<br/>
-                                2. 关闭当前弹窗，插件会自动添加到仪表盘<br/>
-                                3. 刷新页面或点击插件，即可查看波士顿矩阵图表<br/>
-                                <br/>
-                                <em style="font-size: 0.9em;">注：创建状态下 SDK 未完全加载是正常现象</em>
-                            </div>
-                        `;
-                        console.log('插件处于创建状态（isCreate=1），等待用户完成配置');
-                        return;
-                    }
+                if (isCreate) {
+                    statusText.textContent = '插件配置中';
+                    statusText.style.color = '#ff991f';
+                    statusDiv.innerHTML = `
+                        <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
+                            <strong>欢迎使用产品分类四象限插件！</strong><br/>
+                            <br/>
+                            <strong>插件说明：</strong><br/>
+                            • 自动从表 ${TABLE_ID} 加载数据<br/>
+                            • 根据需求趋势得分和竞争强度得分绘制波士顿矩阵<br/>
+                            • 气泡大小和颜色深浅由利润空间得分决定<br/>
+                            <br/>
+                            <button id="save-config-btn" style="
+                                background: #00b96b;
+                                color: white;
+                                border: none;
+                                padding: 10px 24px;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                font-size: 14px;
+                                font-weight: 600;
+                                margin-top: 12px;
+                            ">
+                                开始使用
+                            </button>
+                            <br/>
+                            <br/>
+                            <em style="font-size: 0.9em; color: #5e6c84;">点击"开始使用"后，插件将自动加载数据并显示图表</em>
+                        </div>
+                    `;
+                    
+                    // 绑定保存按钮事件
+                    setTimeout(() => {
+                        const saveBtn = document.getElementById('save-config-btn');
+                        if (saveBtn) {
+                            saveBtn.onclick = async () => {
+                                try {
+                                    saveBtn.textContent = '保存中...';
+                                    saveBtn.disabled = true;
+                                    
+                                    // 检查 dashboard API 是否可用
+                                    if (typeof bitable !== 'undefined' && bitable.dashboard) {
+                                        await bitable.dashboard.saveConfig({
+                                            customConfig: {
+                                                tableId: TABLE_ID,
+                                                fields: FIELD_NAMES
+                                            },
+                                            dataConditions: []
+                                        });
+                                        console.log('✓ 配置已保存');
+                                        
+                                        statusText.textContent = '配置已保存，正在加载数据...';
+                                        statusText.style.color = '#00b96b';
+                                        statusDiv.innerHTML = `
+                                            <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
+                                                <strong>配置已保存！</strong><br/>
+                                                插件将在几秒钟后自动刷新并显示数据...<br/>
+                                                <br/>
+                                                <em style="font-size: 0.9em;">如果没有自动刷新，请手动刷新页面</em>
+                                            </div>
+                                        `;
+                                    } else {
+                                        throw new Error('dashboard API 不可用');
+                                    }
+                                } catch (error) {
+                                    console.error('保存配置失败:', error);
+                                    saveBtn.textContent = '保存失败，请重试';
+                                    saveBtn.disabled = false;
+                                    alert('保存配置失败: ' + error.message);
+                                }
+                            };
+                        }
+                    }, 100);
+                    
+                    console.log('插件处于创建状态（isCreate=1），等待用户点击"开始使用"');
+                    return;
+                }
                     
                     // 非创建状态但 SDK 未加载：真正的错误
                     if (typeof bitable === 'undefined') {
