@@ -92,6 +92,30 @@
             color: #d46b08;
             padding: 12px;
             border-radius: 4px;
+            border-left: 4px solid #ff991f;
+            margin-top: 12px;
+        }
+
+        .error strong {
+            color: #de350b;
+        }
+
+        .debug-info {
+            background: #f4f5f7;
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 12px;
+            font-size: 12px;
+            color: #5e6c84;
+            font-family: 'Courier New', monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .debug-info pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
 
         #chart {
@@ -200,6 +224,26 @@
             statusText.textContent = '正在加载数据...';
             statusText.style.color = '#5e6c84';
             
+            // 添加超时机制（30秒）
+            const timeoutId = setTimeout(() => {
+                statusText.textContent = '加载超时（30秒）';
+                statusText.style.color = '#de350b';
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>加载超时</strong><br/>
+                        数据加载超过30秒仍未完成，可能的原因：<br/>
+                        1. 数据量太大（超过500条）<br/>
+                        2. 网络连接问题<br/>
+                        3. 飞书API响应慢<br/>
+                        <br/>
+                        建议：<br/>
+                        - 检查网络连接<br/>
+                        - 尝试刷新页面<br/>
+                        - 联系技术支持
+                    </div>
+                `;
+            }, 30000);
+            
             try {
                 // 检查 bitable 是否可用
                 if (typeof bitable === 'undefined') {
@@ -248,8 +292,17 @@
                 console.log(`✓ 获取到 ${recordList.length} 条记录`);
                 
                 if (recordList.length === 0) {
+                    clearTimeout(timeoutId);
                     statusText.textContent = '未找到任何记录';
                     statusText.style.color = '#ff991f';
+                    statusDiv.innerHTML = `<div class="error">
+                        <strong>未找到任何记录</strong><br/>
+                        表 ${TABLE_ID} 中没有数据<br/>
+                        <br/>
+                        请检查：<br/>
+                        1. 表ID是否正确<br/>
+                        2. 表中是否有数据
+                    </div>`;
                     return;
                 }
                 
@@ -294,6 +347,9 @@
                 statusText.textContent = `正在处理 ${recordList.length} 条记录...`;
                 // 遍历记录，提取数据
                 let processedCount = 0;
+                let errorCount = 0;
+                const errors = [];
+                
                 for (const record of recordList) {
                     processedCount++;
                     if (processedCount % 50 === 0) {
@@ -350,10 +406,26 @@
                             });
                         }
                     } catch (err) {
-                        console.warn('处理记录时出错:', err);
-                        continue;
+                        errorCount++;
+                        const errorMsg = err.message || String(err);
+                        errors.push(`记录 ${processedCount}: ${errorMsg}`);
+                        console.warn(`处理记录 ${processedCount} 时出错:`, err);
+                        // 只记录前10个错误，避免太多
+                        if (errors.length >= 10) {
+                            continue;
+                        }
                     }
                 }
+                
+                // 如果有错误，显示警告
+                if (errorCount > 0) {
+                    console.warn(`处理记录时共遇到 ${errorCount} 个错误`);
+                    if (errors.length > 0) {
+                        console.warn('前10个错误:', errors);
+                    }
+                }
+                
+                clearTimeout(timeoutId); // 清除超时
                 
                 console.log(`✓ 处理完成，有效数据: ${data.length} 条`);
                 
@@ -362,29 +434,65 @@
                     statusText.style.color = '#36b37e';
                     renderChart(data);
                     statusText.textContent = `✓ 成功加载 ${data.length} 条数据`;
+                    
+                    // 如果有错误，显示警告但不阻止显示
+                    if (errorCount > 0) {
+                        statusDiv.innerHTML = `<div class="error">
+                            <strong>警告</strong>：处理 ${recordList.length} 条记录时遇到 ${errorCount} 个错误<br/>
+                            成功加载 ${data.length} 条有效数据
+                        </div>`;
+                    }
                 } else {
+                    clearTimeout(timeoutId);
                     statusText.textContent = '未找到有效数据（所有记录的数据格式可能不正确）';
                     statusText.style.color = '#ff991f';
-                    statusDiv.innerHTML = `<div class="error">未找到有效数据<br/>请检查表中的数据格式是否正确</div>`;
+                    statusDiv.innerHTML = `<div class="error">
+                        <strong>未找到有效数据</strong><br/>
+                        所有记录的数据格式可能不正确<br/>
+                        <br/>
+                        <strong>调试信息:</strong><br/>
+                        - 总记录数: ${recordList.length}<br/>
+                        - 处理错误数: ${errorCount}<br/>
+                        - 表ID: ${TABLE_ID}<br/>
+                        - 必需字段: ${Object.values(FIELD_NAMES).join(', ')}<br/>
+                        <br/>
+                        请检查表中的数据格式是否正确
+                        ${errors.length > 0 ? `<br/><br/><strong>前10个错误:</strong><br/>${errors.join('<br/>')}` : ''}
+                    </div>`;
                 }
                 
             } catch (error) {
+                clearTimeout(timeoutId); // 清除超时
+                
                 console.error('加载数据失败:', error);
+                const errorStack = error.stack || '无堆栈信息';
+                const errorDetails = {
+                    message: error.message,
+                    name: error.name,
+                    stack: errorStack
+                };
+                
                 statusText.textContent = `加载失败: ${error.message}`;
                 statusText.style.color = '#de350b';
-                statusDiv.innerHTML = `<div class="error">
-                    <strong>错误:</strong> ${error.message}<br/>
-                    <br/>
-                    <strong>调试信息:</strong><br/>
-                    - 表ID: ${TABLE_ID}<br/>
-                    - 必需字段: ${Object.values(FIELD_NAMES).join(', ')}<br/>
-                    <br/>
-                    请检查：<br/>
-                    1. 是否在飞书 Dashboard 插件环境中运行<br/>
-                    2. 表ID是否正确<br/>
-                    3. 字段名称是否匹配<br/>
-                    4. 打开浏览器控制台查看详细错误信息
-                </div>`;
+                statusDiv.innerHTML = `
+                    <div class="error">
+                        <strong>错误:</strong> ${error.message}<br/>
+                        <br/>
+                        <strong>调试信息:</strong><br/>
+                        - 表ID: ${TABLE_ID}<br/>
+                        - 必需字段: ${Object.values(FIELD_NAMES).join(', ')}<br/>
+                        <br/>
+                        <strong>请检查：</strong><br/>
+                        1. 是否在飞书 Dashboard 插件环境中运行<br/>
+                        2. 表ID是否正确<br/>
+                        3. 字段名称是否匹配<br/>
+                        4. 网络连接是否正常<br/>
+                    </div>
+                    <div class="debug-info">
+                        <strong>详细错误信息：</strong><br/>
+                        <pre>${JSON.stringify(errorDetails, null, 2)}</pre>
+                    </div>
+                `;
             }
         }
 
