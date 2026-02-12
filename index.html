@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>选品决策波士顿矩阵</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-    <!-- 飞书 Base JS SDK -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js" charset="utf-8"></script>
-    <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css">
+    <!-- 飞书 Base JS SDK - 确保正确加载 -->
+    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js" charset="utf-8" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/dashboard.css" crossorigin="anonymous">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -38,39 +38,7 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        /* 配置模式：左右分栏布局 */
-        .container.config-mode {
-            display: flex;
-            gap: 0;
-            padding: 0;
-            max-width: 100vw;
-            height: 100vh;
-            border-radius: 0;
-            margin: 0;
-        }
-
-        .main-content {
-            flex: 1;
-            overflow: auto;
-            padding: 24px;
-        }
-
-        .config-panel {
-            width: 200px;
-            background: #fafbfc;
-            border-left: 1px solid var(--border);
-            padding: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .config-panel .save-btn {
-            width: 100%;
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: 600;
-        }
+        /* 飞书会自动提供配置界面和确定按钮 */
 
         .header {
             display: flex;
@@ -141,25 +109,20 @@
 </head>
 <body>
     <div class="container" id="main-container">
-        <div class="main-content">
-            <div class="header">
-                <h1>产品分类四象限（波士顿矩阵）</h1>
-                <button onclick="initPlugin()" id="reload-btn" style="display: none;">重新加载</button>
-            </div>
-            
-            <div class="info">
-                <span id="info-text">正在检测运行环境...</span>
-                <span id="status-text" style="color: var(--text-sub);">正在初始化...</span>
-            </div>
-            
-            <div id="status"></div>
-            <div id="chart"></div>
+        <div class="header">
+            <h1>产品分类四象限（波士顿矩阵）</h1>
+            <button onclick="initPlugin()" id="reload-btn" style="display: none;">重新加载</button>
         </div>
         
-        <!-- 配置面板（创建/配置状态时显示） -->
-        <div class="config-panel" id="config-panel" style="display: none;">
-            <button id="save-config-btn" class="save-btn">确定</button>
+        <div class="info">
+            <span id="info-text">正在检测运行环境...</span>
+            <span id="status-text" style="color: var(--text-sub);">正在初始化...</span>
         </div>
+        
+        <div id="status"></div>
+        <div id="chart"></div>
+        
+        <!-- 飞书会自动显示"确定"按钮，不需要手动渲染 -->
     </div>
 
     <script>
@@ -314,38 +277,9 @@
                 isCreateOrConfig = (state === 'create' || state === 'config' || isCreateFromUrl || (!state && isInIframe));
                 console.log('isCreateOrConfig:', isCreateOrConfig, 'state:', state, 'isCreateFromUrl:', isCreateFromUrl);
                 
-                // 如果是创建/配置状态，显示配置面板
-                if (isCreateOrConfig) {
-                    console.log('进入创建/配置模式，显示配置面板');
-                    document.getElementById('main-container').classList.add('config-mode');
-                    document.getElementById('config-panel').style.display = 'flex';
-                    infoText.textContent = '插件配置模式：查看预览后点击右侧"确定"按钮完成配置';
-                    statusText.textContent = '配置状态';
-                    
-                    // 绑定"确定"按钮事件
-                    const saveBtn = document.getElementById('save-config-btn');
-                    if (saveBtn) {
-                        saveBtn.onclick = async () => {
-                            try {
-                                if (dashboard && dashboard.saveConfig) {
-                                    await dashboard.saveConfig({});
-                                    statusText.textContent = '✓ 配置已保存';
-                                    statusText.style.color = '#36b37e';
-                                } else {
-                                    // 兜底：即使没有 dashboard，也模拟成功
-                                    statusText.textContent = '✓ 配置已确认';
-                                    statusText.style.color = '#36b37e';
-                                    console.warn('dashboard.saveConfig 不可用，仅显示确认消息');
-                                }
-                            } catch (error) {
-                                console.error('保存配置失败:', error);
-                                statusText.textContent = '保存配置失败: ' + (error.message || '未知错误');
-                                statusText.style.color = '#de350b';
-                            }
-                        };
-                        console.log('已绑定"确定"按钮事件');
-                    }
-                }
+                // 注意：飞书在创建/配置状态下会自动显示"确定"按钮
+                // 我们只需要渲染图表预览，不要自己渲染按钮
+                console.log('创建/配置模式：飞书会自动显示"确定"按钮');
                 
                 // 尝试使用 SDK 加载数据
                 try {
@@ -390,9 +324,11 @@
                         <br/>
                         <strong>请确保：</strong><br/>
                         1. Flask 后端正在运行 (端口 8000)<br/>
-                        2. 点击右侧"确定"按钮仍可完成配置<br/>
-                        3. 如需使用 SDK，请刷新页面重试
+                        2. 如需使用 SDK，请刷新页面重试
                     </div>`;
+                    
+                    // SDK 失败时，不显示按钮，等待飞书自动显示
+                    console.log('SDK 失败，飞书环境会自动显示"确定"按钮（如果正确识别）');
                     
                     // 加载本地 API 数据
                     console.log('使用本地 API 加载数据...');
