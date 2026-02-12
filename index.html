@@ -356,6 +356,8 @@
                 statusText.textContent = '正在获取记录列表...';
                 // 获取记录列表（创建状态使用预览数据，展示状态使用完整数据）
                 let recordList;
+                const dashboard = window.dashboard || (typeof bitable !== 'undefined' ? bitable.dashboard : null);
+                
                 if (isPreview && dashboard && dashboard.getPreviewData) {
                     console.log('使用预览数据模式（创建状态）');
                     try {
@@ -1179,9 +1181,9 @@
                     loadData(true); // 传入 true 表示使用预览数据
                     return;
                 }
-                    
-                    // 非创建状态但 SDK 未加载：真正的错误
-                    if (typeof bitable === 'undefined') {
+                
+                // 非创建状态：检查 SDK 是否正常加载
+                if (typeof bitable === 'undefined') {
                         statusText.textContent = '错误：Base JS SDK 未加载';
                         statusText.style.color = '#de350b';
                         statusDiv.innerHTML = `
@@ -1217,24 +1219,6 @@
                 }
                 
                 if (!bitable.base) {
-                    // 如果是预览模式（创建状态），可能 base 还没加载，这是正常的
-                    if (isPreview) {
-                        console.log('预览模式下 bitable.base 不可用，显示空图表');
-                        statusText.textContent = '等待配置完成后加载数据';
-                        statusText.style.color = '#ff991f';
-                        statusDiv.innerHTML = `
-                            <div class="error" style="background: #fff4e6; color: #d46b08;">
-                                <strong>提示：</strong>当前处于配置状态，暂无法加载数据<br/>
-                                <br/>
-                                请点击右侧的<strong>"确定"</strong>按钮完成配置，配置完成后将自动加载数据并显示图表。
-                            </div>
-                        `;
-                        // 显示一个空图表
-                        renderChart([]);
-                        return;
-                    }
-                    
-                    // 展示状态下 base 不可用才是真正的错误
                     statusText.textContent = '错误：bitable.base 不可用';
                     statusText.style.color = '#de350b';
                     statusDiv.innerHTML = `
@@ -1261,43 +1245,8 @@
                 console.log('bitable 对象:', bitable);
                 statusText.textContent = 'SDK 已加载，开始获取数据...';
                 
-                // 检查 dashboard 对象（可能直接可用，也可能在 bitable 下）
-                const dashboard = window.dashboard || bitable.dashboard;
-                
-                if (!dashboard) {
-                    // 如果没有 dashboard，直接加载数据（展示状态）
-                    console.log('Dashboard API 不可用，直接加载数据');
-                    loadData();
-                    return;
-                }
-                
-                // 检查插件状态
-                let state;
-                try {
-                    state = dashboard.state;
-                    console.log('插件状态:', state);
-                } catch (e) {
-                    console.warn('无法获取插件状态，直接加载数据:', e);
-                    loadData();
-                    return;
-                }
-                
-                // 如果是创建状态，不加载数据
-                if (state === 'create') {
-                    console.log('插件处于创建状态');
-                    statusText.textContent = '请完成插件配置';
-                    statusText.style.color = '#ff991f';
-                    statusDiv.innerHTML = `
-                        <div class="error" style="background: #e3fcef; color: #006644; border-left-color: #36b37e;">
-                            <strong>请配置插件</strong><br/>
-                            插件当前处于创建/配置状态，请完成配置后查看数据
-                        </div>
-                    `;
-                    return;
-                }
-                
-                // 其他状态（display/config）都加载数据
-                console.log('开始加载数据');
+                // 展示状态：直接加载数据
+                console.log('展示状态，开始加载数据');
                 loadData();
                 
             } catch (error) {
