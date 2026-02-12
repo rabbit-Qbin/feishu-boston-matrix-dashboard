@@ -3,10 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>产品分类四象限（波士顿矩阵）</title>
-    <!-- 飞书 Base JS SDK - 必须手动引入 -->
-    <script src="https://lf1-cdn-tos.bytegoofy.com/obj/lark-platform/base-js-sdk/2.0.17/bitable.js"></script>
-    <!-- ECharts -->
+    <title>选品决策波士顿矩阵</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -36,55 +33,6 @@
             border-radius: 8px;
             padding: 24px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            position: relative;
-        }
-        
-        /* 创建状态下的布局 */
-        .container.config-mode {
-            display: flex;
-            gap: 0;
-            padding: 0;
-            max-width: 100vw;
-            height: 100vh;
-            border-radius: 0;
-        }
-        
-        .main-content {
-            flex: 1;
-            overflow: auto;
-            padding: 24px;
-        }
-        
-        .config-panel {
-            width: 320px;
-            background: #fafbfc;
-            border-left: 1px solid var(--border);
-            padding: 24px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .config-panel h3 {
-            margin: 0 0 16px 0;
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-        
-        .config-panel .welcome-text {
-            font-size: 13px;
-            line-height: 1.6;
-            color: var(--text-sub);
-            margin-bottom: 20px;
-        }
-        
-        .config-panel .save-btn {
-            margin-top: auto;
-            width: 100%;
-            padding: 10px 24px;
-            font-size: 14px;
-            font-weight: 600;
         }
 
         .header {
@@ -141,30 +89,6 @@
             color: #d46b08;
             padding: 12px;
             border-radius: 4px;
-            border-left: 4px solid #ff991f;
-            margin-top: 12px;
-        }
-
-        .error strong {
-            color: #de350b;
-        }
-
-        .debug-info {
-            background: #f4f5f7;
-            padding: 12px;
-            border-radius: 4px;
-            margin-top: 12px;
-            font-size: 12px;
-            color: #5e6c84;
-            font-family: 'Courier New', monospace;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .debug-info pre {
-            margin: 0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
         }
 
         #chart {
@@ -179,75 +103,52 @@
     </style>
 </head>
 <body>
-    <div class="container" id="main-container">
-        <div class="main-content">
-            <div class="header">
-                <h1>产品分类四象限（波士顿矩阵）</h1>
-            </div>
-            
-            <div class="info">
-                <span id="status-text" style="color: var(--text-sub);">正在加载数据...</span>
-            </div>
-            
-            <div id="status"></div>
-            <div id="chart"></div>
+    <div class="container">
+        <div class="header">
+            <h1>产品分类四象限（波士顿矩阵）</h1>
+            <button onclick="loadData()">加载数据</button>
         </div>
         
-        <!-- 配置面板（仅在创建/配置状态显示） -->
-        <div class="config-panel" id="config-panel" style="display: none;">
-            <h3>插件配置</h3>
-            <div class="welcome-text">
-                <strong>欢迎使用产品分类四象限插件！</strong><br/><br/>
-                <strong>插件说明：</strong><br/>
-                • 自动从指定表加载数据<br/>
-                • 根据需求趋势和竞争强度绘制波士顿矩阵<br/>
-                • 气泡大小和颜色由利润空间决定<br/><br/>
-                左侧是图表预览效果。<br/>
-                确认无误后，点击下方"确定"按钮完成配置。
-            </div>
-            <button id="save-config-btn" class="save-btn">确定</button>
+        <div class="info">
+            <span>本页为本地调试版：当前从 <code>http://localhost:8000/api/table4/scatter-data</code> 拉取表4数据，在飞书插件中将由 Base JS SDK 实时读取</span>
+            <span id="status-text" style="color: var(--text-sub);">点击按钮加载数据</span>
         </div>
+        
+        <div id="status"></div>
+        <div id="chart"></div>
     </div>
 
     <script>
-        // 颜色映射（四象限分类：使用表格中的「初步产品分类」字段）
         const colorMap = {
-            '淘汰产品': 'rgba(92, 186, 120, 0.92)',  // 绿色：左下（低需求/低竞争得分=高竞争）
-            '畅销爆品': 'rgba(214, 88, 98, 0.92)',  // 红色：右上（高需求/高竞争得分=低竞争）
-            '潜力产品': 'rgba(255, 193, 7, 0.92)',   // 黄色：左上（低需求/高竞争得分=低竞争）
-            '稳健产品': 'rgba(97, 131, 217, 0.92)', // 蓝色：右下（高需求/低竞争得分=高竞争）
+            '淘汰产品': 'rgba(92, 186, 120, 0.92)',
+            '畅销爆品': 'rgba(214, 88, 98, 0.92)',
+            '潜力产品': 'rgba(255, 193, 7, 0.92)',
+            '稳健产品': 'rgba(97, 131, 217, 0.92)',
             '其他': 'rgba(180, 180, 180, 0.65)'
         };
 
-        // 分类名称标准化映射（处理可能的变体或option_id）
         const categoryAlias = {
-            // 标准四类
             '畅销爆品': '畅销爆品',
             '稳健产品': '稳健产品',
             '潜力产品': '潜力产品',
             '淘汰产品': '淘汰产品',
-            // 可能的变体
             '蓝海爆品': '畅销爆品',
             '潜力蓝海': '潜力产品',
             '观察产品': '稳健产品',
-            // option_id 兜底（如果后端没转换）- 表3的初步产品分类字段的option_id
-            'optLGIU4WF': '畅销爆品',  // 表3初步产品分类
-            'optlDdYN8t': '稳健产品',  // 表3初步产品分类
-            'optNYHmAtG': '潜力产品',  // 表3初步产品分类
-            'optLeC0N1j': '淘汰产品',  // 表3初步产品分类
-            // 旧的option_id（最终产品分类字段的，作为兜底）
+            'optLGIU4WF': '畅销爆品',
+            'optlDdYN8t': '稳健产品',
+            'optNYHmAtG': '潜力产品',
+            'optLeC0N1j': '淘汰产品',
             'optkmQxjzD': '畅销爆品',
             'opt1Tp7Shs': '潜力产品',
             'optkVAQnil': '稳健产品',
             'optRGReDsp': '淘汰产品'
         };
 
-        // 获取分类对应的颜色
         function getCategoryColor(categoryZh) {
             return colorMap[categoryZh] || colorMap['其他'];
         }
 
-        // 十位数取整 + 统计
         function roundDownTo10(value) { return Math.floor(value / 10) * 10; }
         function roundUpTo10(value) { return Math.ceil(value / 10) * 10; }
         function median(values) {
@@ -257,332 +158,65 @@
             return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
         }
 
-        // 坐标轴按数据自适应：向下/向上取整到十位
-        function roundDownTo10(n) {
-            if (!isFinite(n)) return 0;
-            return Math.floor(n / 10) * 10;
-        }
-        function roundUpTo10(n) {
-            if (!isFinite(n)) return 100;
-            return Math.ceil(n / 10) * 10;
-        }
+        function roundDownTo10n(n) { if (!isFinite(n)) return 0; return Math.floor(n / 10) * 10; }
+        function roundUpTo10n(n) { if (!isFinite(n)) return 100; return Math.ceil(n / 10) * 10; }
 
+        const PORTS = [8000, 8001, 8002, 8003, 8004];
         let myChart = null;
-        
-        // 表4的ID（根据你的实际表ID修改）
-        const TABLE_ID = 'tblY7X9rzlo3huWT';
-        
-        // 字段名称映射
-        const FIELD_NAMES = {
-            demand: '需求趋势得分',
-            competition: '竞争强度得分',
-            profit: '利润空间得分',
-            category: '初步产品分类',
-            title: '商品标题',
-            asin: 'ASIN'
-        };
 
-        // 使用 Base JS SDK 加载数据
-        // isPreview: true 表示创建状态，使用 getPreviewData(); false 表示展示状态，使用完整数据
-        async function loadData(isPreview = false) {
+        async function loadData() {
             const statusDiv = document.getElementById('status');
             const statusText = document.getElementById('status-text');
             statusDiv.innerHTML = '';
             statusText.textContent = '正在加载数据...';
-            statusText.style.color = '#5e6c84';
-            
-            // 添加超时机制（30秒）
-            const timeoutId = setTimeout(() => {
-                statusText.textContent = '加载超时（30秒）';
-                statusText.style.color = '#de350b';
-                statusDiv.innerHTML = `
-                    <div class="error">
-                        <strong>加载超时</strong><br/>
-                        数据加载超过30秒仍未完成，可能的原因：<br/>
-                        1. 数据量太大（超过500条）<br/>
-                        2. 网络连接问题<br/>
-                        3. 飞书API响应慢<br/>
-                        <br/>
-                        建议：<br/>
-                        - 检查网络连接<br/>
-                        - 尝试刷新页面<br/>
-                        - 联系技术支持
-                    </div>
-                `;
-            }, 30000);
-            
-            try {
-                // 检查 bitable 是否可用
-                if (typeof bitable === 'undefined') {
-                    throw new Error('Base JS SDK 未加载，请检查 SDK 脚本是否正确引入');
-                }
-                
-                if (!bitable.base) {
-                    throw new Error('bitable.base 不可用，请确保在飞书 Dashboard 插件环境中运行');
-                }
-                
-                statusText.textContent = '正在获取 Base 对象...';
-                // 获取当前 Base
-                const base = bitable.base;
-                console.log('✓ 获取到 Base 对象');
-                
-                statusText.textContent = `正在获取表 (ID: ${TABLE_ID})...`;
-                // 获取表
-                const table = await base.getTable(TABLE_ID);
-                if (!table) {
-                    throw new Error(`未找到表 ID: ${TABLE_ID}`);
-                }
-                console.log('✓ 获取到表对象');
-                
-                statusText.textContent = '正在获取字段列表...';
-                // 获取字段列表
-                const fieldList = await table.getFieldList();
-                const fieldMap = {};
-                for (const field of fieldList) {
-                    const fieldName = await field.getName();
-                    fieldMap[fieldName] = field;
-                }
-                console.log('✓ 获取到字段列表，共', Object.keys(fieldMap).length, '个字段');
-                console.log('字段列表:', Object.keys(fieldMap));
-                
-                // 检查必需字段
-                const requiredFields = [FIELD_NAMES.demand, FIELD_NAMES.competition, FIELD_NAMES.profit, FIELD_NAMES.category];
-                const missingFields = requiredFields.filter(f => !fieldMap[f]);
-                if (missingFields.length > 0) {
-                    throw new Error(`缺少必需字段: ${missingFields.join(', ')}。可用字段: ${Object.keys(fieldMap).join(', ')}`);
-                }
-                console.log('✓ 必需字段检查通过');
-                
-                statusText.textContent = '正在获取记录列表...';
-                // 获取记录列表（创建状态使用预览数据，展示状态使用完整数据）
-                let recordList;
-                const dashboard = window.dashboard || (typeof bitable !== 'undefined' ? bitable.dashboard : null);
-                
-                if (isPreview && dashboard && dashboard.getPreviewData) {
-                    console.log('使用预览数据模式（创建状态）');
-                    try {
-                        const previewData = await dashboard.getPreviewData();
-                        console.log('预览数据:', previewData);
-                        // getPreviewData() 可能返回 { records: [...] } 或直接返回记录数组
-                        recordList = previewData.records || previewData || [];
-                    } catch (e) {
-                        console.warn('获取预览数据失败，尝试使用完整数据:', e);
-                        recordList = await table.getRecordList();
-                    }
-                } else {
-                    recordList = await table.getRecordList();
-                }
-                console.log(`✓ 获取到 ${recordList.length} 条记录`);
-                
-                if (recordList.length === 0) {
-                    statusText.textContent = '未找到任何记录';
-                    statusText.style.color = '#ff991f';
-                    statusDiv.innerHTML = `<div class="error">
-                        <strong>未找到任何记录</strong><br/>
-                        表 ${TABLE_ID} 中没有数据<br/>
-                        <br/>
-                        请检查：<br/>
-                        1. 表ID是否正确<br/>
-                        2. 表中是否有数据
-                    </div>`;
-                    return;
-                }
-                
-                // 处理数据
-                const data = [];
-                const categoryOptionMap = {};
-                
-                statusText.textContent = '正在处理分类字段...';
-                // 获取分类字段的选项映射（如果是查找引用字段，需要特殊处理）
-                const categoryField = fieldMap[FIELD_NAMES.category];
-                const categoryFieldType = await categoryField.getType();
-                console.log('分类字段类型:', categoryFieldType);
-                
-                // 如果是查找引用字段，需要获取被引用字段的选项
-                if (categoryFieldType === 19) { // 19 = Lookup
-                    statusText.textContent = '正在获取查找引用字段的选项...';
-                    // 获取被引用的表和字段
-                    const lookupInfo = await categoryField.getLookupInfo();
-                    console.log('查找引用信息:', lookupInfo);
-                    if (lookupInfo) {
-                        const refTable = await base.getTable(lookupInfo.targetTableId);
-                        const refField = await refTable.getField(lookupInfo.targetFieldId);
-                        const refFieldType = await refField.getType();
-                        
-                        if (refFieldType === 3) { // 3 = SingleSelect
-                            const options = await refField.getOptions();
-                            for (const opt of options) {
-                                categoryOptionMap[opt.id] = opt.name;
+            let lastError = null;
+            for (const port of PORTS) {
+                const apiUrl = `http://localhost:${port}/api/table4/scatter-data`;
+                try {
+                    const response = await fetch(apiUrl);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.code === 0) {
+                            if (result.total > 0) {
+                                statusText.textContent = `✓ 成功加载 ${result.total} 条数据 (端口: ${port})`;
+                                statusText.style.color = '#36b37e';
+                                if (result.debug) {
+                                    statusDiv.innerHTML = `<div style="font-size:12px; color:var(--text-sub); margin-top:8px;">原始记录: ${result.debug.raw_records} | 跳过: ${result.debug.skipped}</div>`;
+                                }
+                                renderChart(result.data);
+                            } else {
+                                statusText.textContent = `已连接但无数据 (端口: ${port})`;
+                                statusText.style.color = '#ff991f';
+                                if (result.debug) {
+                                    statusDiv.innerHTML = `<div style="font-size:12px; color:var(--text-sub); margin-top:8px;">原始记录: ${result.debug.raw_records} | 跳过: ${result.debug.skipped}</div>`;
+                                }
                             }
+                            return;
+                        } else {
+                            statusText.textContent = `错误: ${result.msg}`;
+                            statusText.style.color = '#de350b';
+                            return;
                         }
                     }
-                } else if (categoryFieldType === 3) { // 3 = SingleSelect
-                    statusText.textContent = '正在获取单选字段的选项...';
-                    const options = await categoryField.getOptions();
-                    for (const opt of options) {
-                        categoryOptionMap[opt.id] = opt.name;
-                    }
+                } catch (error) {
+                    lastError = error;
+                    continue;
                 }
-                
-                console.log('✓ 分类选项映射:', categoryOptionMap);
-                
-                statusText.textContent = `正在处理 ${recordList.length} 条记录...`;
-                // 遍历记录，提取数据
-                let processedCount = 0;
-                let errorCount = 0;
-                const errors = [];
-                
-                for (const record of recordList) {
-                    processedCount++;
-                    if (processedCount % 50 === 0) {
-                        statusText.textContent = `正在处理记录 ${processedCount}/${recordList.length}...`;
-                    }
-                    try {
-                        // 获取各字段值
-                        const demandValue = await record.getCellValue(fieldMap[FIELD_NAMES.demand].id);
-                        const competitionValue = await record.getCellValue(fieldMap[FIELD_NAMES.competition].id);
-                        const profitValue = await record.getCellValue(fieldMap[FIELD_NAMES.profit].id);
-                        const categoryValue = await record.getCellValue(fieldMap[FIELD_NAMES.category].id);
-                        const titleValue = await record.getCellValue(fieldMap[FIELD_NAMES.title]?.id);
-                        const asinValue = await record.getCellValue(fieldMap[FIELD_NAMES.asin]?.id);
-                        
-                        // 处理数值字段（可能是数组格式）
-                        const demandScore = Array.isArray(demandValue) ? demandValue[0] : demandValue;
-                        const competitionScore = Array.isArray(competitionValue) ? competitionValue[0] : competitionValue;
-                        const profitScore = Array.isArray(profitValue) ? profitValue[0] : profitValue;
-                        
-                        // 处理分类字段（可能是数组格式的 option_id）
-                        let category = '';
-                        if (categoryValue) {
-                            const categoryIds = Array.isArray(categoryValue) ? categoryValue : [categoryValue];
-                            if (categoryIds.length > 0) {
-                                const categoryId = categoryIds[0];
-                                category = categoryOptionMap[categoryId] || categoryId;
-                            }
-                        }
-                        
-                        // 处理标题（可能是数组格式的对象）
-                        let title = '';
-                        if (titleValue) {
-                            const titleArr = Array.isArray(titleValue) ? titleValue : [titleValue];
-                            if (titleArr.length > 0 && typeof titleArr[0] === 'object' && titleArr[0].text) {
-                                title = titleArr[0].text;
-                            } else if (typeof titleArr[0] === 'string') {
-                                title = titleArr[0];
-                            }
-                        }
-                        
-                        // 处理 ASIN
-                        const asin = Array.isArray(asinValue) ? asinValue[0] : (asinValue || '');
-                        
-                        // 验证数据有效性
-                        if (typeof demandScore === 'number' && typeof competitionScore === 'number' && typeof profitScore === 'number' &&
-                            isFinite(demandScore) && isFinite(competitionScore) && isFinite(profitScore)) {
-                            data.push({
-                                x: demandScore,
-                                y: competitionScore,
-                                size: profitScore,
-                                category: category,
-                                title: title,
-                                asin: asin
-                            });
-                        }
-                    } catch (err) {
-                        errorCount++;
-                        const errorMsg = err.message || String(err);
-                        errors.push(`记录 ${processedCount}: ${errorMsg}`);
-                        console.warn(`处理记录 ${processedCount} 时出错:`, err);
-                        // 只记录前10个错误，避免太多
-                        if (errors.length >= 10) {
-                            continue;
-                        }
-                    }
-                }
-                
-                // 如果有错误，显示警告
-                if (errorCount > 0) {
-                    console.warn(`处理记录时共遇到 ${errorCount} 个错误`);
-                    if (errors.length > 0) {
-                        console.warn('前10个错误:', errors);
-                    }
-                }
-                
-                clearTimeout(timeoutId); // 清除超时
-                
-                console.log(`✓ 处理完成，有效数据: ${data.length} 条`);
-                
-                if (data.length > 0) {
-                    statusText.textContent = `✓ 成功加载 ${data.length} 条数据，正在渲染图表...`;
-                    statusText.style.color = '#36b37e';
-                    renderChart(data);
-                    statusText.textContent = `✓ 成功加载 ${data.length} 条数据`;
-                } else {
-                    clearTimeout(timeoutId);
-                    statusText.textContent = '未找到有效数据（所有记录的数据格式可能不正确）';
-                    statusText.style.color = '#ff991f';
-                    statusDiv.innerHTML = `<div class="error">
-                        <strong>未找到有效数据</strong><br/>
-                        所有记录的数据格式可能不正确<br/>
-                        <br/>
-                        <strong>调试信息:</strong><br/>
-                        - 总记录数: ${recordList.length}<br/>
-                        - 表ID: ${TABLE_ID}<br/>
-                        - 必需字段: ${Object.values(FIELD_NAMES).join(', ')}<br/>
-                        <br/>
-                        请检查表中的数据格式是否正确
-                    </div>`;
-                }
-                
-            } catch (error) {
-                clearTimeout(timeoutId); // 清除超时
-                
-                console.error('加载数据失败:', error);
-                const errorStack = error.stack || '无堆栈信息';
-                const errorDetails = {
-                    message: error.message,
-                    name: error.name,
-                    stack: errorStack
-                };
-                
-                statusText.textContent = `加载失败: ${error.message}`;
-                statusText.style.color = '#de350b';
-                statusDiv.innerHTML = `
-                    <div class="error">
-                        <strong>错误:</strong> ${error.message}<br/>
-                        <br/>
-                        <strong>调试信息:</strong><br/>
-                        - 表ID: ${TABLE_ID}<br/>
-                        - 必需字段: ${Object.values(FIELD_NAMES).join(', ')}<br/>
-                        <br/>
-                        <strong>请检查：</strong><br/>
-                        1. 是否在飞书 Dashboard 插件环境中运行<br/>
-                        2. 表ID是否正确<br/>
-                        3. 字段名称是否匹配<br/>
-                        4. 网络连接是否正常<br/>
-                    </div>
-                    <div class="debug-info">
-                        <strong>详细错误信息：</strong><br/>
-                        <pre>${JSON.stringify(errorDetails, null, 2)}</pre>
-                    </div>
-                `;
             }
+            statusText.textContent = '无法连接到后端服务';
+            statusText.style.color = '#de350b';
+            statusDiv.innerHTML = `<div class="error">请求失败: 无法连接到后端服务。请确保后端服务正在运行。<br/>尝试的端口: ${PORTS.join(', ')}<br/>最后错误: ${lastError ? lastError.message : '未知错误'}</div>`;
         }
 
         function renderChart(data) {
             const chartDom = document.getElementById('chart');
-            
-            if (myChart) {
-                myChart.dispose();
-            }
-            
+            if (myChart) myChart.dispose();
             myChart = echarts.init(chartDom);
-
-            if (data.length === 0) {
+            if (!data.length) {
                 chartDom.innerHTML = '<div style="text-align: center; padding: 50px; color: var(--text-sub);">暂无数据</div>';
                 return;
             }
 
-            // 计算坐标轴范围（基于实际数据范围，十位数取整）
             const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
             const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
             const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
@@ -590,148 +224,109 @@
             const sizeMax = Math.max(...sizes);
             const sortedSizes = sizes.slice().sort((a, b) => a - b);
             const len = sortedSizes.length;
-            // 利润空间分位数：用于颜色（5 档）+ 尺寸（重点放大 Top20%）
             const q20 = len ? sortedSizes[Math.floor(len * 0.2)] : sizeMin;
             const q40 = len ? sortedSizes[Math.floor(len * 0.4)] : sizeMin + (sizeMax - sizeMin) * 0.4;
             const q60 = len ? sortedSizes[Math.floor(len * 0.6)] : sizeMin + (sizeMax - sizeMin) * 0.6;
             const q80 = len ? sortedSizes[Math.floor(len * 0.8)] : sizeMin + (sizeMax - sizeMin) * 0.8;
-            const q90 = len ? sortedSizes[Math.floor(len * 0.9)] : sizeMax;  // 用于区分 Top10%
-            
-            // 计算中位数（用于中轴线）
+            const q90 = len ? sortedSizes[Math.floor(len * 0.9)] : sizeMax;
+
             const xMed = median(xs);
             const yMed = median(ys);
-            
-            // 计算实际数据范围
             const xMinRaw = Math.min(...xs);
             const xMaxRaw = Math.max(...xs);
             const yMinRaw = Math.min(...ys);
             const yMaxRaw = Math.max(...ys);
-            
-            // 坐标轴范围：基于实际数据范围，向下/向上取整到十位数（让数据居中显示）
             const xMin = roundDownTo10(xMinRaw);
             const xMax = roundUpTo10(xMaxRaw);
             const yMin = roundDownTo10(yMinRaw);
             const yMax = roundUpTo10(yMaxRaw);
 
-            console.log('中位数:', { xMed, yMed });
-            console.log('轴范围(居中):', { xMin, xMax, yMin, yMax });
+            function getProfitBand(score) {
+                if (!isFinite(score)) return 0;
+                if (score <= q20) return 0;
+                if (score <= q40) return 1;
+                if (score <= q60) return 2;
+                if (score <= q80) return 3;
+                return 4;
+            }
+            function getBandAlpha(band) {
+                const alphas = [0.3, 0.5, 0.7, 0.85, 1.0];
+                return alphas[Math.max(0, Math.min(alphas.length - 1, band))];
+            }
+            function withAlpha(rgba, alpha) {
+                if (typeof rgba !== 'string') return rgba;
+                const m = rgba.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
+                if (!m) return rgba;
+                return `rgba(${m[1]}, ${alpha})`;
+            }
+            function getSizeBand(score) {
+                if (!isFinite(score)) return 0;
+                if (score <= q80) return 0;
+                if (score <= q90) return 1;
+                return 2;
+            }
 
-            // 按表格中的「最初产品分类」字段分组（表格已分类好，直接使用）
             const categoryMap = {};
             const categoryCounts = { '畅销爆品': 0, '稳健产品': 0, '潜力产品': 0, '淘汰产品': 0 };
-            const unknownCategories = {}; // 记录未知分类，用于调试
-            
+            const unknownCategories = {};
+
             data.forEach(item => {
-                // 直接使用后端返回的category字段（表格里的「最初产品分类」），标准化一下确保是中文名
                 let category = (item.category || '').toString().trim();
-                const originalCategory = category; // 保存原始值用于调试
-                
-                // 标准化分类名（处理可能的变体或option_id）
+                const originalCategory = category;
                 if (categoryAlias[category]) {
                     category = categoryAlias[category];
                 } else if (category) {
-                    // 模糊匹配
                     let matched = false;
                     for (const key in categoryAlias) {
                         if (category.includes(key) || key.includes(category)) {
-                            category = categoryAlias[key];
-                            matched = true;
-                            break;
+                            category = categoryAlias[key]; matched = true; break;
                         }
                     }
-                    // 如果还是没匹配到，记录并强制映射到最接近的分类
                     if (!matched) {
                         unknownCategories[originalCategory] = (unknownCategories[originalCategory] || 0) + 1;
-                        // 根据关键词强制映射
-                        if (category.includes('畅销') || category.includes('爆品')) {
-                            category = '畅销爆品';
-                        } else if (category.includes('稳健') || category.includes('稳定')) {
-                            category = '稳健产品';
-                        } else if (category.includes('潜力') || category.includes('潜力')) {
-                            category = '潜力产品';
-                        } else if (category.includes('淘汰') || category.includes('淘汰')) {
-                            category = '淘汰产品';
-                        } else {
-                            // 如果完全无法识别，根据坐标位置判断（兜底方案）
-                            const x = item.x;
-                            const y = item.y;
-                            const right = x >= xMed;
-                            const top = y >= yMed;
-                            if (right && top) category = '畅销爆品';
-                            else if (!right && top) category = '潜力产品';
-                            else if (right && !top) category = '稳健产品';
-                            else category = '淘汰产品';
-                        }
+                        const x = item.x, y = item.y;
+                        const right = x >= xMed, top = y >= yMed;
+                        if (right && top) category = '畅销爆品';
+                        else if (!right && top) category = '潜力产品';
+                        else if (right && !top) category = '稳健产品';
+                        else category = '淘汰产品';
                     }
                 } else {
-                    // 如果category为空，根据坐标位置判断（兜底方案）
-                    const x = item.x;
-                    const y = item.y;
-                    const right = x >= xMed;
-                    const top = y >= yMed;
+                    const x = item.x, y = item.y;
+                    const right = x >= xMed, top = y >= yMed;
                     if (right && top) category = '畅销爆品';
                     else if (!right && top) category = '潜力产品';
                     else if (right && !top) category = '稳健产品';
                     else category = '淘汰产品';
                 }
-                
                 categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-                
-                if (!categoryMap[category]) {
-                    categoryMap[category] = [];
-                }
+                if (!categoryMap[category]) categoryMap[category] = [];
                 categoryMap[category].push([
-                    item.x,      // X轴：需求趋势得分
-                    item.y,      // Y轴：竞争强度得分
-                    item.size,   // 气泡大小：利润空间得分
-                    item.title,  // 悬停提示
-                    item.asin,
-                    category  // 表格中的分类（标准化后的中文名）
+                    item.x, item.y, item.size, item.title, item.asin, category
                 ]);
             });
 
-            // 固定四类顺序，避免图例乱跳（只有四个分类，不要"其他"）
             const CATEGORY_ORDER = ['畅销爆品', '稳健产品', '潜力产品', '淘汰产品'];
-
-            // 构建系列数据 - 每个分类一个系列，确保颜色区分
             const series = CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0).map(category => {
-                const categoryColor = getCategoryColor(category);
-                console.log(`分类: ${category}, 颜色: ${categoryColor}, 数量: ${categoryMap[category].length}`);
-                
                 return {
                     name: category,
                     type: 'scatter',
                     data: categoryMap[category],
                     symbolSize: (data) => {
-                        // data 是数组 [x, y, size, title, asin, category]
                         const profitScore = data[2];
-                        if (!isFinite(profitScore) || !isFinite(sizeMin) || !isFinite(sizeMax)) {
-                            return 12;
-                        }
-
-                        // 尺寸只重点拉开 Top20%，其他保持正常：3 档
-                        const sizeBand = getSizeBand(profitScore); // 0: 普通80%；1: Top10~20；2: Top10
-
+                        if (!isFinite(profitScore) || !isFinite(sizeMin) || !isFinite(sizeMax)) return 12;
+                        const sizeBand = getSizeBand(profitScore);
                         let base, span, bandMin, bandMax;
                         if (sizeBand === 0) {
-                            // 普通 80%：中等大小，略有浮动
-                            base = 16; span = 6;
-                            bandMin = sizeMin; bandMax = q80;
+                            base = 16; span = 6; bandMin = sizeMin; bandMax = q80;
                         } else if (sizeBand === 1) {
-                            // Top10~20：放大一档
-                            base = 28; span = 8;
-                            bandMin = q80; bandMax = q90;
+                            base = 28; span = 8; bandMin = q80; bandMax = q90;
                         } else {
-                            // Top10：最大一档，视觉中心
-                            base = 46; span = 14;
-                            bandMin = q90; bandMax = sizeMax;
+                            base = 46; span = 14; bandMin = q90; bandMax = sizeMax;
                         }
-
                         const range = (bandMax - bandMin) || 1;
-                        const t = Math.max(0, Math.min(1, (profitScore - bandMin) / range)); // 档内0~1
-                        // 档内围绕 base 上下浮动一圈，让同一档也能按分数有细微差异
+                        const t = Math.max(0, Math.min(1, (profitScore - bandMin) / range));
                         const size = base + (t - 0.5) * span;
-                        // 整体半径控制在合理范围内，避免过小或过大
                         return Math.max(6, Math.min(52, size));
                     },
                     itemStyle: {
@@ -767,208 +362,67 @@
                 };
             });
 
-            // 占比显示（用于图例/统计框）
             const pct = (n) => data.length ? `${(n * 100 / data.length).toFixed(1)}%` : '0.0%';
-            
-            // 调试：打印分类信息
-            console.log('分类统计:', Object.keys(categoryMap).map(cat => ({
-                category: cat,
-                count: categoryMap[cat].length,
-                color: getCategoryColor(cat)
-            })));
-            
-            // 打印分类统计和坐标验证
-            console.log('表格分类统计（应该只有四类）:', categoryCounts);
-            if (Object.keys(unknownCategories).length > 0) {
-                console.warn('⚠️ 发现未知分类（已自动映射）:', unknownCategories);
-            }
-            console.log('坐标轴范围:', { 
-                xMin: xMin, xMax: xMax, 
-                yMin: yMin, yMax: yMax,
-                x实际范围: `${xMinRaw.toFixed(1)} ~ ${xMaxRaw.toFixed(1)}`,
-                y实际范围: `${yMinRaw.toFixed(1)} ~ ${yMaxRaw.toFixed(1)}`
-            });
-            console.log('中位数位置（用于中轴线）:', { xMed: xMed.toFixed(2), yMed: yMed.toFixed(2) });
-            console.log('利润空间分位数（用于气泡大小/颜色）:', { sizeMin, q20, q40, q60, q80, q90, sizeMax });
-            console.log('前5条数据坐标示例:', data.slice(0, 5).map(item => ({
-                需求趋势得分_X: item.x,
-                竞争强度得分_Y: item.y,
-                利润空间得分_Size: item.size,
-                表格原始分类: item.category
-            })));
-
-            // 注意：坐标轴范围已经在上方按“中位数居中”计算为 xMin/xMax/yMin/yMax
-
-            // 根据利润空间分数获取所在档位（0~4），用于颜色深浅（5 档）
-            function getProfitBand(score) {
-                if (!isFinite(score)) return 0;
-                if (score <= q20) return 0;
-                if (score <= q40) return 1;
-                if (score <= q60) return 2;
-                if (score <= q80) return 3;
-                return 4;
-            }
-
-            // 不同档位对应的透明度（颜色深浅）
-            function getBandAlpha(band) {
-                const alphas = [0.3, 0.5, 0.7, 0.85, 1.0];
-                return alphas[Math.max(0, Math.min(alphas.length - 1, band))];
-            }
-
-            // 在原有 rgba 颜色上应用新的 alpha
-            function withAlpha(rgba, alpha) {
-                if (typeof rgba !== 'string') return rgba;
-                const m = rgba.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
-                if (!m) return rgba;
-                return `rgba(${m[1]}, ${alpha})`;
-            }
-
-            // 气泡尺寸分档（3 档）：普通 80% 正常，Top10~20 放大一档，Top10 再放大一档
-            function getSizeBand(score) {
-                if (!isFinite(score)) return 0;
-                if (score <= q80) return 0;   // 普通 80%
-                if (score <= q90) return 1;   // Top10~20
-                return 2;                     // Top10
-            }
 
             const option = {
-                grid: {
-                    left: '40',
-                    right: '40',
-                    top: '70',      // 为图表标题和统计框预留空间
-                    bottom: '60',   // 增加底部空间，避免图例和X轴名称重叠
-                    containLabel: true
-                },
+                grid: { left: '40', right: '40', top: '70', bottom: '60', containLabel: true },
                 title: {
                     text: '产品分类四象限（需求趋势 × 竞争强度）',
-                    left: 'center',
-                    top: 20,
-                    textStyle: {
-                        fontSize: 16,
-                        fontWeight: 600,
-                        color: '#172b4d'
-                    }
+                    left: 'center', top: 20,
+                    textStyle: { fontSize: 16, fontWeight: 600, color: '#172b4d' }
                 },
                 tooltip: {
                     padding: 10,
                     backgroundColor: 'rgba(255,255,255,0.95)',
-                    borderColor: '#dfe1e6',
-                    borderWidth: 1,
-                    textStyle: {
-                        color: '#172b4d',
-                        fontSize: 13
-                    },
+                    borderColor: '#dfe1e6', borderWidth: 1,
+                    textStyle: { color: '#172b4d', fontSize: 13 },
                     formatter: (params) => {
                         const v = params.value;
-                        const title = (v[3] || '未知').length > 60 
-                            ? (v[3].substring(0, 60) + '...') 
-                            : (v[3] || '未知');
-                        // v[5] 已经是通过 classifyQuadrant 计算出的四象限分类（畅销爆品/稳健产品/潜力产品/淘汰产品）
+                        const title = (v[3] || '未知').length > 60 ? (v[3].substring(0, 60) + '...') : (v[3] || '未知');
                         const categoryZh = v[5] || '其他';
-                        return `
-                            <div style="line-height: 1.8;">
-                                <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d;">
-                                    ${title}
-                                </div>
-                                <div style="color: #5e6c84; font-size: 12px;">
-                                    <div>ASIN: <span style="color: #172b4d;">${v[4] || 'N/A'}</span></div>
-                                    <div>需求趋势: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(1)}</span></div>
-                                    <div>竞争强度: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(1)}</span></div>
-                                    <div>利润空间: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(1)}</span></div>
-                                    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #dfe1e6;">
-                                        分类: <span style="color: ${getCategoryColor(categoryZh) || '#5e6c84'}; font-weight: 600;">${categoryZh}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        return `<div style="line-height: 1.8;">
+  <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d;">${title}</div>
+  <div style="color: #5e6c84; font-size: 12px;">
+    <div>ASIN: <span style="color: #172b4d;">${v[4] || 'N/A'}</span></div>
+    <div>需求趋势: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(1)}</span></div>
+    <div>竞争强度: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(1)}</span></div>
+    <div>利润空间: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(1)}</span></div>
+    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #dfe1e6;">分类: <span style="color: ${getCategoryColor(categoryZh) || '#5e6c84'}; font-weight: 600;">${categoryZh}</span></div>
+  </div>
+</div>`;
                     }
                 },
                 xAxis: {
-                    type: 'value',
-                    name: '需求趋势得分',
-                    nameGap: 35,  // 增加与图例的距离
-                    nameLocation: 'middle',
-                    nameTextStyle: {
-                        fontSize: 13,
-                        color: '#5e6c84',
-                        fontWeight: 500
-                    },
-                    min: xMin,
-                    max: xMax,
-                    splitLine: {
-                        show: true,
-                        lineStyle: {
-                            type: 'dashed',
-                            color: '#e8e8e8',
-                            width: 1
-                        }
-                    },
-                    axisLine: {
-                        lineStyle: {
-                            color: '#888'
-                        }
-                    },
-                    axisLabel: {
-                        color: '#5e6c84',
-                        fontSize: 12
-                    }
+                    type: 'value', name: '需求趋势得分', nameGap: 35, nameLocation: 'middle',
+                    nameTextStyle: { fontSize: 13, color: '#5e6c84', fontWeight: 500 },
+                    min: xMin, max: xMax,
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e8e8e8', width: 1 } },
+                    axisLine: { lineStyle: { color: '#888' } },
+                    axisLabel: { color: '#5e6c84', fontSize: 12 }
                 },
                 yAxis: {
-                    type: 'value',
-                    name: '竞争强度得分',
-                    nameGap: 35,
-                    nameLocation: 'middle',
-                    nameTextStyle: {
-                        fontSize: 13,
-                        color: '#5e6c84',
-                        fontWeight: 500
-                    },
-                    min: yMin,
-                    max: yMax,
-                    splitLine: {
-                        show: true,
-                        lineStyle: {
-                            type: 'dashed',
-                            color: '#e8e8e8',
-                            width: 1
-                        }
-                    },
-                    axisLine: {
-                        lineStyle: {
-                            color: '#888'
-                        }
-                    },
-                    axisLabel: {
-                        color: '#5e6c84',
-                        fontSize: 12
-                    }
+                    type: 'value', name: '竞争强度得分', nameGap: 35, nameLocation: 'middle',
+                    nameTextStyle: { fontSize: 13, color: '#5e6c84', fontWeight: 500 },
+                    min: yMin, max: yMax,
+                    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e8e8e8', width: 1 } },
+                    axisLine: { lineStyle: { color: '#888' } },
+                    axisLabel: { color: '#5e6c84', fontSize: 12 }
                 },
-                // 四象限背景文字（参考原型）
                 graphic: [
-                    // 左上角统计框（参考你给的"四象限矩阵气泡图_改进版.png"）
                     {
-                        type: 'group',
-                        left: '70',  // 回到更靠左的位置
-                        top: '60',   // 稍微下移一点，避免顶到标题
+                        type: 'group', left: '70', top: '60',
                         children: [
                             {
-                                type: 'rect',
-                                shape: { width: 210, height: 140, r: 6 },  // 收窄右侧宽度，减少遮挡
+                                type: 'rect', shape: { width: 210, height: 140, r: 6 },
                                 style: {
-                                    fill: 'rgba(255,255,255,0.88)',
-                                    stroke: '#dfe1e6',
-                                    lineWidth: 1,
-                                    shadowBlur: 10,
-                                    shadowColor: 'rgba(0,0,0,0.08)'
+                                    fill: 'rgba(255,255,255,0.88)', stroke: '#dfe1e6', lineWidth: 1,
+                                    shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.08)'
                                 }
                             },
                             {
-                                type: 'text',
-                                left: 10,
-                                top: 10,
+                                type: 'text', left: 10, top: 10,
                                 style: {
-                                    text:
-`总产品：${data.length}
+                                    text:`总产品：${data.length}
 分界线：需求趋势=${xMed.toFixed(1)}，竞争强度=${yMed.toFixed(1)}
 
 四象限分布：
@@ -976,306 +430,49 @@
 稳健产品：${categoryCounts['稳健产品']}（${pct(categoryCounts['稳健产品'])}）
 潜力产品：${categoryCounts['潜力产品']}（${pct(categoryCounts['潜力产品'])}）
 淘汰产品：${categoryCounts['淘汰产品']}（${pct(categoryCounts['淘汰产品'])}）`,
-                                    fill: '#172b4d',
-                                    font: '10px Inter, sans-serif',  // 字号从11px缩小到10px
-                                    lineHeight: 16,  // 相应调整行高
-                                    opacity: 0.95
+                                    fill: '#172b4d', font: '10px Inter, sans-serif', lineHeight: 16, opacity: 0.95
                                 }
                             }
                         ]
-                    },
-                    // 四象限背景用 markArea 画（在 series 里），这里仅放文字标签
-                    // 移除象限标签（用户要求）
-                    // 中轴线通过 markLine 实现，这样会根据实际数据范围自动调整
-                ],
-                // 说明：markLine 必须挂在 series 上；下面会追加一个“辅助系列”只负责画中轴线
-                legend: {
-                    // 固定显示四个分类，按顺序（确保不会出现其他分类）
-                    data: CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0),
-                    bottom: 10,  // 离底部10px，避免与X轴名称重叠
-                    icon: 'circle',
-                    itemWidth: 10,
-                    itemHeight: 10,
-                    itemGap: 20,
-                    textStyle: {
-                        fontSize: 12,
-                        color: '#5e6c84'
-                    },
-                    formatter: (name) => {
-                        const cnt = (categoryCounts && categoryCounts[name]) ? categoryCounts[name] : 0;
-                        return `${name} (${cnt})`;
                     }
+                ],
+                legend: {
+                    data: CATEGORY_ORDER.filter(c => categoryMap[c] && categoryMap[c].length > 0),
+                    bottom: 10, icon: 'circle', itemWidth: 10, itemHeight: 10, itemGap: 20,
+                    textStyle: { fontSize: 12, color: '#5e6c84' },
+                    formatter: (name) => `${name} (${(categoryCounts && categoryCounts[name]) ? categoryCounts[name] : 0})`
                 },
                 series: [
-                    // 背景四象限色块（markArea）
                     {
-                        name: '__areas__',
-                        type: 'scatter',
-                        data: [],
-                        silent: true,
-                        tooltip: { show: false },
-                        z: 0,
+                        name: '__areas__', type: 'scatter', data: [], silent: true, tooltip: { show: false }, z: 0,
                         markArea: {
-                            silent: true,
-                            itemStyle: { opacity: 0.14 },
+                            silent: true, itemStyle: { opacity: 0.14 },
                             data: [
-                                // 左上：潜力产品（黄色）
-                                [
-                                    { xAxis: xMin, yAxis: yMax, itemStyle: { color: 'rgba(255, 193, 7, 0.30)' } },
-                                    { xAxis: xMed, yAxis: yMed }
-                                ],
-                                // 右上：畅销爆品（红色）
-                                [
-                                    { xAxis: xMed, yAxis: yMax, itemStyle: { color: 'rgba(214, 88, 98, 0.30)' } },
-                                    { xAxis: xMax, yAxis: yMed }
-                                ],
-                                // 左下：淘汰产品（绿色）
-                                [
-                                    { xAxis: xMin, yAxis: yMed, itemStyle: { color: 'rgba(92, 186, 120, 0.26)' } },
-                                    { xAxis: xMed, yAxis: yMin }
-                                ],
-                                // 右下：稳健产品（蓝色）
-                                [
-                                    { xAxis: xMed, yAxis: yMed, itemStyle: { color: 'rgba(97, 131, 217, 0.26)' } },
-                                    { xAxis: xMax, yAxis: yMin }
-                                ]
+                                [ { xAxis: xMin, yAxis: yMax, itemStyle: { color: 'rgba(255, 193, 7, 0.30)' } }, { xAxis: xMed, yAxis: yMed } ],
+                                [ { xAxis: xMed, yAxis: yMax, itemStyle: { color: 'rgba(214, 88, 98, 0.30)' } }, { xAxis: xMax, yAxis: yMed } ],
+                                [ { xAxis: xMin, yAxis: yMed, itemStyle: { color: 'rgba(92, 186, 120, 0.26)' } }, { xAxis: xMed, yAxis: yMin } ],
+                                [ { xAxis: xMed, yAxis: yMed, itemStyle: { color: 'rgba(97, 131, 217, 0.26)' } }, { xAxis: xMax, yAxis: yMin } ]
                             ]
                         }
                     },
                     ...series,
                     {
-                        name: '__median__',
-                        type: 'scatter',
-                        data: [],
-                        silent: true,
-                        tooltip: { show: false },
+                        name: '__median__', type: 'scatter', data: [], silent: true, tooltip: { show: false },
                         markLine: {
-                            silent: true,
-                            symbol: ['none', 'none'],
-                            lineStyle: {
-                                color: '#666',
-                                type: 'dashed',  // 虚线
-                                width: 1.5,     // 更细
-                                opacity: 0.7
-                            },
-                            label: { show: false },
-                            data: [{ xAxis: xMed }, { yAxis: yMed }]
+                            silent: true, symbol: ['none', 'none'],
+                            lineStyle: { color: '#666', type: 'dashed', width: 1.5, opacity: 0.7 },
+                            label: { show: false }, data: [{ xAxis: xMed }, { yAxis: yMed }]
                         },
-                        z: 999,
-                        zlevel: 10
+                        z: 999, zlevel: 10
                     }
                 ]
             };
 
             myChart.setOption(option);
-
-            // 响应式
-            window.addEventListener('resize', () => {
-                myChart.resize();
-            });
+            window.addEventListener('resize', () => myChart.resize());
         }
 
-        // 飞书插件初始化
-        async function initPlugin() {
-            const statusDiv = document.getElementById('status');
-            const statusText = document.getElementById('status-text');
-            
-            try {
-                // 等待 SDK 加载（最多等待 10 秒，飞书环境可能需要更长时间）
-                let retryCount = 0;
-                const maxRetries = 100; // 10秒，每100ms检查一次
-                
-                statusText.textContent = '等待飞书环境初始化...';
-                statusText.style.color = '#5e6c84';
-                
-                while (retryCount < maxRetries) {
-                    if (typeof bitable !== 'undefined' && bitable.base) {
-                        break;
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    retryCount++;
-                    if (retryCount % 10 === 0) {
-                        statusText.textContent = `等待飞书环境初始化... (${retryCount * 100}ms)`;
-                        console.log(`等待 SDK 加载... (${retryCount * 100}ms)`);
-                        console.log('当前 bitable 状态:', typeof bitable);
-                        if (typeof bitable !== 'undefined') {
-                            console.log('bitable.base 状态:', bitable.base);
-                        }
-                    }
-                }
-                
-                // 检查 bitable 是否已加载
-                // 检查 dashboard 对象（可能直接可用，也可能在 bitable 下）
-                const dashboard = window.dashboard || (bitable ? bitable.dashboard : null);
-                
-                // 检查插件状态
-                let state;
-                let isCreateOrConfig = false;
-                
-                if (dashboard) {
-                    try {
-                        state = dashboard.state;
-                        console.log('插件状态:', state);
-                        // state 可能是 'create', 'config', 'display'
-                        isCreateOrConfig = (state === 'create' || state === 'config');
-                    } catch (e) {
-                        console.warn('无法获取插件状态:', e);
-                    }
-                } else {
-                    // 兜底：通过 URL 参数判断
-                    const isCreate = window.location.href.includes('isCreate=1') || window.location.href.includes('isCreate=true');
-                    if (isCreate) {
-                        isCreateOrConfig = true;
-                        state = 'create';
-                    }
-                }
-                
-                // 如果是创建/配置状态，显示配置面板
-                if (isCreateOrConfig) {
-                    console.log('插件处于创建/配置状态，显示配置面板');
-                    const container = document.getElementById('main-container');
-                    const configPanel = document.getElementById('config-panel');
-                    
-                    if (container) {
-                        container.classList.add('config-mode');
-                    }
-                    if (configPanel) {
-                        configPanel.style.display = 'flex';
-                    }
-                    
-                    // 绑定保存按钮事件
-                    const saveBtn = document.getElementById('save-config-btn');
-                    if (saveBtn) {
-                        saveBtn.onclick = async () => {
-                            try {
-                                saveBtn.textContent = '保存中...';
-                                saveBtn.disabled = true;
-                                
-                                // 调用 dashboard.saveConfig() 保存配置
-                                if (dashboard && dashboard.saveConfig) {
-                                    await dashboard.saveConfig({
-                                        customConfig: {
-                                            tableId: TABLE_ID,
-                                            fields: FIELD_NAMES
-                                        },
-                                        dataConditions: []
-                                    });
-                                    console.log('✓ 配置已保存');
-                                    
-                                    statusText.textContent = '✓ 配置已保存！插件将自动刷新...';
-                                    statusText.style.color = '#00b96b';
-                                } else {
-                                    throw new Error('dashboard.saveConfig 不可用');
-                                }
-                            } catch (error) {
-                                console.error('保存配置失败:', error);
-                                saveBtn.textContent = '保存失败，请重试';
-                                saveBtn.disabled = false;
-                                statusText.textContent = '保存失败: ' + error.message;
-                                statusText.style.color = '#de350b';
-                            }
-                        };
-                    }
-                    
-                    // 创建状态下加载预览数据
-                    loadData(true); // 传入 true 表示使用预览数据
-                    return;
-                }
-                
-                // 非创建状态：检查 SDK 是否正常加载
-                if (typeof bitable === 'undefined') {
-                        statusText.textContent = '错误：Base JS SDK 未加载';
-                        statusText.style.color = '#de350b';
-                        statusDiv.innerHTML = `
-                            <div class="error">
-                                <strong>错误：Base JS SDK 未加载</strong><br/>
-                                <br/>
-                                <strong>可能原因：</strong><br/>
-                                1. 当前不在飞书插件环境中运行<br/>
-                                2. SDK 脚本加载失败（网络问题）<br/>
-                                3. 浏览器阻止了第三方脚本<br/>
-                                <br/>
-                                <strong>调试信息：</strong><br/>
-                                - 等待时间: ${retryCount * 100}ms<br/>
-                                - window.bitable: ${typeof bitable}<br/>
-                                - URL: ${window.location.href}<br/>
-                                <br/>
-                                <strong>解决方案：</strong><br/>
-                                1. <strong>按 F12 打开浏览器控制台</strong>，查看 Network 标签中 bitable.js 是否加载成功<br/>
-                                2. 检查网络连接是否正常<br/>
-                                3. 尝试刷新页面（Ctrl+R 或 Cmd+R）<br/>
-                                4. 尝试关闭插件重新打开<br/>
-                                5. 如果问题持续，请联系技术支持
-                            </div>
-                        `;
-                        console.error('Base JS SDK 未加载');
-                        console.error('环境信息:', {
-                            bitable: typeof bitable,
-                            location: window.location.href,
-                            userAgent: navigator.userAgent
-                        });
-                        return;
-                    }
-                }
-                
-                if (!bitable.base) {
-                    statusText.textContent = '错误：bitable.base 不可用';
-                    statusText.style.color = '#de350b';
-                    statusDiv.innerHTML = `
-                        <div class="error">
-                            <strong>错误：bitable.base 不可用</strong><br/>
-                            <br/>
-                            <strong>调试信息：</strong><br/>
-                            - bitable 对象存在: 是<br/>
-                            - bitable.base: ${bitable.base}<br/>
-                            - bitable 属性: ${Object.keys(bitable).join(', ')}<br/>
-                            <br/>
-                            <strong>请确保：</strong><br/>
-                            1. 在飞书多维表格的"仪表盘"中运行插件<br/>
-                            2. 已选择正确的数据表<br/>
-                            3. 插件 URL 使用 HTTPS 协议
-                        </div>
-                    `;
-                    console.error('bitable.base 不可用');
-                    console.error('bitable 对象:', bitable);
-                    return;
-                }
-                
-                console.log('✓ Base JS SDK 已加载');
-                console.log('bitable 对象:', bitable);
-                statusText.textContent = 'SDK 已加载，开始获取数据...';
-                
-                // 展示状态：直接加载数据
-                console.log('展示状态，开始加载数据');
-                loadData();
-                
-            } catch (error) {
-                console.error('插件初始化失败:', error);
-                statusText.textContent = `初始化失败: ${error.message}`;
-                statusText.style.color = '#de350b';
-                statusDiv.innerHTML = `
-                    <div class="error">
-                        <strong>插件初始化失败</strong><br/>
-                        ${error.message}<br/>
-                        <br/>
-                        <strong>错误详情：</strong><br/>
-                        <pre>${error.stack || '无堆栈信息'}</pre>
-                    </div>
-                `;
-                // 如果出错，尝试直接加载数据
-                setTimeout(() => {
-                    console.log('尝试直接加载数据...');
-                    loadData();
-                }, 1000);
-            }
-        }
-        
-        // 等待页面加载完成
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initPlugin);
-        } else {
-            initPlugin();
-        }
+        window.onload = function() { loadData(); };
     </script>
 </body>
 </html>
