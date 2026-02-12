@@ -1,0 +1,20 @@
+[33m49ca753[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix: 应用插件支持Create/Config/View状态 + 确定按钮 + 修复tooltip错误
+[33m5283d2d[m fix: 纯应用模式版本 - 移除所有仪表盘代码，避免 'this api is only supported in config mode' 错误
+[33m6215dc4[m feat: 应用模式版本 - 性能优化+字段选择+刷新功能
+[33m18a18a0[m Revert index.html to local API Boston Matrix version (commit fddf91b)
+[33ma7168df[m chore: switch GitHub Pages entry to Vite bundle (index.html from plugin-vite/dist)
+[33m96569c8[m 修复：恢复完整图表渲染代码（上一版误截断）
+[33m0843e57[m 修复：SDK 手动注入失败时快速报错 + SDK未就绪直接走兜底；ECharts CDN 换 cdnjs
+[33m99c2985[m 关键修复：移除手动SDK加载，等待飞书自动注入（15秒超时）
+[33m5da913d[m 修复SDK加载时序问题：使用defer属性和改进的等待机制（10秒超时，每100ms检查）
+[33mda31192[m 修复：移除手动渲染的确定按钮，让飞书自动显示官方按钮
+[33mbd34cf8[m 实现完整兜底策略：飞书环境始终显示确定按钮，SDK失败时自动回退到本地Flask API
+[33m1571db5[m 增强SDK加载逻辑：延长等待时间到5秒并每200ms检查，添加兜底逻辑在SDK未加载时也显示确定按钮
+[33m768d946[m 改进环境检测：通过iframe检测和parent域名判断，解决飞书iframe加载时环境识别失败的问题
+[33mafaa8fc[m 添加兜底逻辑：在飞书环境中无法确定状态时默认显示配置面板和确定按钮，修复charset警告
+[33m274d672[m 优化SDK初始化：添加dashboard.css，简化等待逻辑，改进飞书环境检测
+[33m01f7d6d[m 简化配置面板：移除说明文字，只保留确定按钮
+[33m72c031d[m 修复确定按钮显示问题：通过URL参数isCreate检测创建状态，确保配置面板和按钮正确显示
+[33m73d3dd6[m 改进飞书环境检测：添加 bridge.ready() 等待和更详细的调试日志
+[33ma856cd6[m 添加飞书插件支持：Base JS SDK集成、配置面板和确定按钮
+[33mfddf91b[m revert: 回退到能显示图片的版本（使用本地 Flask 后端）
