@@ -1,4 +1,4 @@
-// Version: 20260219-2 - 强制清除 CDN 缓存
+// Version: 20260219-3 - 强制生成新 hash，彻底清除 CDN 缓存
 import { bitable, workspace } from '@lark-base-open/js-sdk';
 import * as echarts from 'echarts';
 import '@lark-base-open/js-sdk/dist/style/dashboard.css';
@@ -1207,7 +1207,8 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     // 性能优化：两阶段加载策略
     // 阶段1：只读取排序必需的字段（需求趋势得分、竞争强度得分、利润空间得分/综合得分）
     // 阶段2：排序后，只对最终显示的数据读取其他字段（标题、ASIN、分类、商品主图）
-    console.log('🚀 [NEW] View loadViewData 两阶段加载策略启动');
+    // 🔥 VERSION: 20260219-4 - 强制生成新 hash
+    console.log('🚀 [NEW v4] View loadViewData 两阶段加载策略启动 - 20260219-4');
     
     // 阶段1：根据配置读取必需字段（需求趋势得分、竞争强度得分、气泡大小字段、排序字段）
     // 优化：只读取实际需要的字段，避免重复读取

@@ -42,18 +42,27 @@ jobs:
           COMMIT_SHA=$(git rev-parse --short HEAD)
           
           # 🔥 使用 Node.js 脚本可靠地添加版本号参数（替代 sed，更可靠）
-          # 确保脚本存在且可执行
+          echo "=== 开始执行版本号参数脚本 ==="
+          echo "当前工作目录: $(pwd)"
+          echo "检查脚本文件..."
+          
           if [ ! -f "scripts/add-version-params.js" ]; then
             echo "❌ 脚本文件不存在: scripts/add-version-params.js"
+            ls -la scripts/ || echo "scripts 目录不存在"
             exit 1
           fi
+          
+          echo "✅ 脚本文件存在，开始执行..."
           node scripts/add-version-params.js
+          SCRIPT_EXIT_CODE=$?
           
           # 验证脚本执行结果
-          if [ $? -ne 0 ]; then
-            echo "❌ 脚本执行失败"
+          if [ $SCRIPT_EXIT_CODE -ne 0 ]; then
+            echo "❌ 脚本执行失败，退出码: $SCRIPT_EXIT_CODE"
             exit 1
           fi
+          
+          echo "=== 脚本执行完成 ==="
           
           # 为所有 HTML 文件添加时间戳注释
           find dist -name "*.html" -type f -exec sed -i "s|</head>|<!-- Build: $BUILD_TIMESTAMP | Commit: $COMMIT_SHA | Date: $BUILD_DATE --></head>|g" {} \;

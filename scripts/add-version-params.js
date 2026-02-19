@@ -86,25 +86,55 @@ function processHtmlFile(filePath) {
 
 // 主函数
 function main() {
+  console.log('🚀 脚本开始执行...');
+  console.log(`📂 dist 目录路径: ${distDir}`);
+  
   if (!fs.existsSync(distDir)) {
     console.error(`❌ dist 目录不存在: ${distDir}`);
+    console.error(`   当前工作目录: ${process.cwd()}`);
     process.exit(1);
   }
+  
+  console.log(`✅ dist 目录存在`);
   
   const htmlFiles = findHtmlFiles(distDir);
   
   if (htmlFiles.length === 0) {
     console.warn(`⚠️  未找到 HTML 文件`);
-    return;
+    console.log(`   检查目录内容:`);
+    try {
+      const items = fs.readdirSync(distDir);
+      console.log(`   目录内容: ${items.join(', ')}`);
+    } catch (e) {
+      console.error(`   无法读取目录: ${e.message}`);
+    }
+    process.exit(1);
   }
   
   console.log(`📋 找到 ${htmlFiles.length} 个 HTML 文件`);
+  htmlFiles.forEach(f => console.log(`   - ${f}`));
   console.log(`🔧 开始添加版本号参数: ${VERSION_PARAM}\n`);
   
-  htmlFiles.forEach(processHtmlFile);
+  let processedCount = 0;
+  htmlFiles.forEach(file => {
+    try {
+      processHtmlFile(file);
+      processedCount++;
+    } catch (e) {
+      console.error(`❌ 处理文件失败: ${file}`);
+      console.error(`   错误: ${e.message}`);
+      process.exit(1);
+    }
+  });
   
-  console.log(`\n✅ 处理完成！`);
+  console.log(`\n✅ 处理完成！共处理 ${processedCount}/${htmlFiles.length} 个文件`);
 }
+
+// 捕获未处理的错误
+process.on('uncaughtException', (error) => {
+  console.error('❌ 未捕获的错误:', error);
+  process.exit(1);
+});
 
 main();
 
