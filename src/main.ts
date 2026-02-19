@@ -1,3 +1,4 @@
+// Version: 20260219-2 - 强制清除 CDN 缓存
 import { bitable, workspace } from '@lark-base-open/js-sdk';
 import * as echarts from 'echarts';
 import '@lark-base-open/js-sdk/dist/style/dashboard.css';
