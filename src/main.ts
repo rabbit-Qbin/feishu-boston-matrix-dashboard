@@ -1206,7 +1206,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     // 性能优化：两阶段加载策略
     // 阶段1：只读取排序必需的字段（需求趋势得分、竞争强度得分、利润空间得分/综合得分）
     // 阶段2：排序后，只对最终显示的数据读取其他字段（标题、ASIN、分类、商品主图）
-    console.log('📋 开始解析记录数据（两阶段加载策略）...');
+    console.log('🚀 [NEW] View loadViewData 两阶段加载策略启动');
     
     // 阶段1：根据配置读取必需字段（需求趋势得分、竞争强度得分、气泡大小字段、排序字段）
     // 优化：只读取实际需要的字段，避免重复读取
@@ -1274,7 +1274,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       const batchGroupPromises = concurrentBatchGroup.map(async ({ batch, batchNum }) => {
         // 批次内：并行处理所有记录
         const recordPromises = batch.map(async (record: any) => {
-          try {
+        try {
             // 根据配置动态读取字段（并行获取所有字段的Cell）
             const cellPromises: Promise<any>[] = [
               record.getCellByField(requiredFieldIds.demand!),
@@ -1290,7 +1290,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             const cells = await Promise.all(cellPromises);
             
             // 并行获取所有字段的值
-            const [
+          const [
               x,
               y,
               size,
@@ -1383,26 +1383,26 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             
             // 并行读取其他字段（标题、ASIN、分类、商品主图）
             const [
-              titleCell,
-              asinCell,
+            titleCell,
+            asinCell,
               categoryCell,
               imageCell
-            ] = await Promise.all([
-              requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
-              requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
+          ] = await Promise.all([
+            requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
+            requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
               requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
               requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
-            ]);
-            
-            // 并行获取所有字段的值
-            const [
-              title,
-              asin,
+          ]);
+          
+          // 并行获取所有字段的值
+          const [
+            title,
+            asin,
               category,
               imageValue
-            ] = await Promise.all([
-              titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
-              asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
+          ] = await Promise.all([
+            titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
+            asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
               categoryCell ? categoryCell.getValue().then((v: any) => toText(v)) : Promise.resolve(''),
               imageCell ? imageCell.getValue() : Promise.resolve(null)
             ]);
@@ -1429,12 +1429,12 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
               category: category || '',
               image: imageUrl
             };
-          } catch (e: any) {
-            console.warn(`⚠️ 解析记录失败:`, e?.message);
-            return null;
-          }
-        });
-        
+        } catch (e: any) {
+          console.warn(`⚠️ 解析记录失败:`, e?.message);
+          return null;
+        }
+      });
+      
         // 等待批次内所有记录处理完成
         const batchResults = await Promise.all(recordPromises);
         return batchResults.filter(r => r !== null);
@@ -1585,7 +1585,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     }
     
     // 性能优化：两阶段加载策略（与 loadPreviewData 相同）
-    console.log('📋 开始解析记录数据（两阶段加载策略）...');
+    console.log('🚀 [NEW] View loadViewData 两阶段加载策略启动');
     
     // 阶段1：根据配置读取必需字段（需求趋势得分、竞争强度得分、气泡大小字段、排序字段）
     console.log('📋 阶段1：根据配置读取必需字段...', {
@@ -1652,7 +1652,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
       const batchGroupPromises = concurrentBatchGroup.map(async ({ batch, batchNum }) => {
         // 批次内：并行处理所有记录
         const recordPromises = batch.map(async (record: any) => {
-          try {
+        try {
             // 根据配置动态读取字段（并行获取所有字段的Cell）
             const cellPromises: Promise<any>[] = [
               record.getCellByField(requiredFieldIds.demand!),
@@ -1668,7 +1668,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             const cells = await Promise.all(cellPromises);
             
             // 并行获取所有字段的值
-            const [
+          const [
               x,
               y,
               size,
@@ -1761,26 +1761,26 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             
             // 并行读取其他字段（标题、ASIN、分类、商品主图）
             const [
-              titleCell,
-              asinCell,
+            titleCell,
+            asinCell,
               categoryCell,
               imageCell
-            ] = await Promise.all([
-              requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
-              requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
+          ] = await Promise.all([
+            requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
+            requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
               requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
               requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
-            ]);
-            
+          ]);
+          
             // 并行获取所有字段的值
-            const [
-              title,
-              asin,
+          const [
+            title,
+            asin,
               category,
               imageValue
-            ] = await Promise.all([
-              titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
-              asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
+          ] = await Promise.all([
+            titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
+            asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
               categoryCell ? categoryCell.getValue().then((v: any) => toText(v)) : Promise.resolve(''),
               imageCell ? imageCell.getValue() : Promise.resolve(null)
             ]);
@@ -1807,12 +1807,12 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
               category: category || '',
               image: imageUrl
             };
-          } catch (e: any) {
+        } catch (e: any) {
             console.warn(`⚠️ 解析记录失败:`, e?.message);
-            return null;
-          }
-        });
-        
+          return null;
+        }
+      });
+      
         // 等待批次内所有记录处理完成
         const batchResults = await Promise.all(recordPromises);
         return batchResults.filter(r => r !== null);

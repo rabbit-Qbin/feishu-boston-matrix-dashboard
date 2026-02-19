@@ -40,6 +40,7 @@ jobs:
           BUILD_TIMESTAMP=$(date +%s)
           BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT_SHA=$(git rev-parse --short HEAD)
+          VERSION_PARAM="?v=$BUILD_TIMESTAMP"
           
           # 为所有 HTML 文件添加时间戳和版本号，强制浏览器识别为新文件
           find dist -name "*.html" -type f -exec sed -i "s|</head>|<!-- Build: $BUILD_TIMESTAMP | Commit: $COMMIT_SHA | Date: $BUILD_DATE --></head>|g" {} \;
@@ -47,10 +48,16 @@ jobs:
           # 在 HTML 中添加 meta 标签强制刷新（增强缓存破坏）
           find dist -name "*.html" -type f -exec sed -i "s|<head>|<head><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\">|g" {} \;
           
+          # 🔥 关键：为所有 JS 和 CSS 文件添加版本号查询参数，强制清除 CDN 缓存
+          # 匹配 src="./assets/xxx.js" 或 href="./assets/xxx.css" 并添加 ?v=timestamp
+          find dist -name "*.html" -type f -exec sed -i "s|src=\"\./assets/\([^\"]*\)\"|src=\"./assets/\1$VERSION_PARAM\"|g" {} \;
+          find dist -name "*.html" -type f -exec sed -i "s|href=\"\./assets/\([^\"]*\)\"|href=\"./assets/\1$VERSION_PARAM\"|g" {} \;
+          
           # 输出构建信息
           echo "Build timestamp: $BUILD_TIMESTAMP"
           echo "Build date: $BUILD_DATE"
           echo "Commit SHA: $COMMIT_SHA"
+          echo "Version parameter: $VERSION_PARAM"
           echo "Files in dist/assets:"
           ls -lh dist/assets/ || echo "No assets directory"
 
