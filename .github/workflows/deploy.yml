@@ -14,6 +14,8 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,11 +36,21 @@ jobs:
           # 添加 .nojekyll 文件禁用 Jekyll
           touch dist/.nojekyll
           
-          # 为所有 HTML 文件添加时间戳注释，强制浏览器识别为新文件
-          find dist -name "*.html" -type f -exec sed -i "s|</head>|<!-- Build: $(date +%s) --></head>|g" {} \;
+          # 生成构建时间戳和版本号
+          BUILD_TIMESTAMP=$(date +%s)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          
+          # 为所有 HTML 文件添加时间戳和版本号，强制浏览器识别为新文件
+          find dist -name "*.html" -type f -exec sed -i "s|</head>|<!-- Build: $BUILD_TIMESTAMP | Commit: $COMMIT_SHA | Date: $BUILD_DATE --></head>|g" {} \;
+          
+          # 在 HTML 中添加 meta 标签强制刷新（增强缓存破坏）
+          find dist -name "*.html" -type f -exec sed -i "s|<head>|<head><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\">|g" {} \;
           
           # 输出构建信息
-          echo "Build timestamp: $(date)"
+          echo "Build timestamp: $BUILD_TIMESTAMP"
+          echo "Build date: $BUILD_DATE"
+          echo "Commit SHA: $COMMIT_SHA"
           echo "Files in dist/assets:"
           ls -lh dist/assets/ || echo "No assets directory"
 
@@ -53,7 +65,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        environment:
-          name: github-pages
-          url: ${{ steps.deployment.outputs.page_url }}
 
