@@ -33,21 +33,24 @@ function processHtmlFile(filePath) {
   let modified = false;
   
   // 为 JS 文件添加版本号参数
-  // 匹配: src="./assets/xxx.js" 或 src='/assets/xxx.js'
-  const jsPattern = /(src=["'])(\.\/)?assets\/([^"']+\.js)(["'])/g;
-  content = content.replace(jsPattern, (match, prefix, dotSlash, filename, suffix) => {
-    if (!match.includes('?v=')) {
+  // 匹配: src="./assets/xxx.js" 或 src='/assets/xxx.js' 或 src="/assets/xxx.js"
+  // 关键：统一转换为相对路径 ./assets/，然后添加版本号
+  const jsPattern = /(src=["'])(\/)?(\.\/)?assets\/([^"']+\.js)(\?v=[^"']+)?(["'])/g;
+  content = content.replace(jsPattern, (match, prefix, absSlash, relSlash, filename, existingParam, suffix) => {
+    if (!existingParam) {
       modified = true;
+      // 统一使用相对路径 ./assets/
       return `${prefix}./assets/${filename}${VERSION_PARAM}${suffix}`;
     }
     return match;
   });
   
   // 为 CSS 文件添加版本号参数
-  const cssPattern = /(href=["'])(\.\/)?assets\/([^"']+\.css)(["'])/g;
-  content = content.replace(cssPattern, (match, prefix, dotSlash, filename, suffix) => {
-    if (!match.includes('?v=')) {
+  const cssPattern = /(href=["'])(\/)?(\.\/)?assets\/([^"']+\.css)(\?v=[^"']+)?(["'])/g;
+  content = content.replace(cssPattern, (match, prefix, absSlash, relSlash, filename, existingParam, suffix) => {
+    if (!existingParam) {
       modified = true;
+      // 统一使用相对路径 ./assets/
       return `${prefix}./assets/${filename}${VERSION_PARAM}${suffix}`;
     }
     return match;
