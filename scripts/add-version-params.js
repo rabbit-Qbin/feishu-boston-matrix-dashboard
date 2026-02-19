@@ -30,28 +30,31 @@ function findHtmlFiles(dir) {
 // 处理 HTML 文件
 function processHtmlFile(filePath) {
   let content = fs.readFileSync(filePath, 'utf8');
+  const originalContent = content;
   let modified = false;
   
   // 为 JS 文件添加版本号参数
   // 匹配: src="./assets/xxx.js" 或 src='/assets/xxx.js' 或 src="/assets/xxx.js"
-  // 关键：统一转换为相对路径 ./assets/，然后添加版本号
-  const jsPattern = /(src=["'])(\/)?(\.\/)?assets\/([^"']+\.js)(\?v=[^"']+)?(["'])/g;
-  content = content.replace(jsPattern, (match, prefix, absSlash, relSlash, filename, existingParam, suffix) => {
+  // 改进：更宽松的匹配，确保能匹配到所有格式
+  const jsPattern = /(src\s*=\s*["'])([^"']*assets\/[^"']+\.js)(\?v=[^"']+)?(["'])/gi;
+  content = content.replace(jsPattern, (match, prefix, filepath, existingParam, suffix) => {
     if (!existingParam) {
       modified = true;
-      // 统一使用相对路径 ./assets/
-      return `${prefix}./assets/${filename}${VERSION_PARAM}${suffix}`;
+      // 确保路径是相对路径格式
+      const normalizedPath = filepath.startsWith('./') ? filepath : `./${filepath.replace(/^\/+/, '')}`;
+      return `${prefix}${normalizedPath}${VERSION_PARAM}${suffix}`;
     }
     return match;
   });
   
   // 为 CSS 文件添加版本号参数
-  const cssPattern = /(href=["'])(\/)?(\.\/)?assets\/([^"']+\.css)(\?v=[^"']+)?(["'])/g;
-  content = content.replace(cssPattern, (match, prefix, absSlash, relSlash, filename, existingParam, suffix) => {
+  const cssPattern = /(href\s*=\s*["'])([^"']*assets\/[^"']+\.css)(\?v=[^"']+)?(["'])/gi;
+  content = content.replace(cssPattern, (match, prefix, filepath, existingParam, suffix) => {
     if (!existingParam) {
       modified = true;
-      // 统一使用相对路径 ./assets/
-      return `${prefix}./assets/${filename}${VERSION_PARAM}${suffix}`;
+      // 确保路径是相对路径格式
+      const normalizedPath = filepath.startsWith('./') ? filepath : `./${filepath.replace(/^\/+/, '')}`;
+      return `${prefix}${normalizedPath}${VERSION_PARAM}${suffix}`;
     }
     return match;
   });
@@ -60,8 +63,24 @@ function processHtmlFile(filePath) {
     fs.writeFileSync(filePath, content, 'utf8');
     console.log(`✅ 已处理: ${filePath}`);
     console.log(`   版本号参数: ${VERSION_PARAM}`);
+    
+    // 显示修改前后的对比（仅显示关键部分）
+    const beforeMatch = originalContent.match(/(src|href)=["'][^"']*assets\/[^"']+\.(js|css)["']/);
+    const afterMatch = content.match(/(src|href)=["'][^"']*assets\/[^"']+\.(js|css)(\?v=[^"']+)?["']/);
+    if (beforeMatch && afterMatch) {
+      console.log(`   修改前: ${beforeMatch[0]}`);
+      console.log(`   修改后: ${afterMatch[0]}`);
+    }
   } else {
     console.log(`⏭️  跳过: ${filePath} (已包含版本号或无需修改)`);
+    // 调试：显示为什么跳过
+    const hasAssets = content.match(/(src|href)=["'][^"']*assets\/[^"']+\.(js|css)["']/);
+    if (hasAssets) {
+      console.log(`   发现资源引用: ${hasAssets[0]}`);
+      if (hasAssets[0].includes('?v=')) {
+        console.log(`   已包含版本号参数`);
+      }
+    }
   }
 }
 
