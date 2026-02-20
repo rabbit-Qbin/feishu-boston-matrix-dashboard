@@ -33,53 +33,65 @@ jobs:
 
       - name: Add cache busting
         run: |
+          set -e
+          set -x
+          
+          echo "=========================================="
+          echo "🚀 缓存破坏步骤开始"
+          echo "=========================================="
+          
           # 添加 .nojekyll 文件禁用 Jekyll
           touch dist/.nojekyll
+          echo "✅ .nojekyll 已创建"
           
           # 生成构建时间戳和版本号
           BUILD_TIMESTAMP=$(date +%s)
           BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT_SHA=$(git rev-parse --short HEAD)
           
-          # 🔥 使用 Node.js 脚本可靠地添加版本号参数（替代 sed，更可靠）
-          echo "=== 开始执行版本号参数脚本 ==="
-          echo "当前工作目录: $(pwd)"
-          echo "检查脚本文件..."
+          echo "📋 构建信息:"
+          echo "   时间戳: $BUILD_TIMESTAMP"
+          echo "   日期: $BUILD_DATE"
+          echo "   提交: $COMMIT_SHA"
+          echo ""
           
-          if [ ! -f "scripts/add-version-params.js" ]; then
-            echo "❌ 脚本文件不存在: scripts/add-version-params.js"
-            ls -la scripts/ || echo "scripts 目录不存在"
-            exit 1
-          fi
+          # 显示构建产物（关键：验证文件名是否变化）
+          echo "📁 构建产物列表:"
+          ls -lh dist/assets/ | head -20
+          echo ""
           
-          echo "✅ 脚本文件存在，开始执行..."
-          node scripts/add-version-params.js
-          SCRIPT_EXIT_CODE=$?
-          
-          # 验证脚本执行结果
-          if [ $SCRIPT_EXIT_CODE -ne 0 ]; then
-            echo "❌ 脚本执行失败，退出码: $SCRIPT_EXIT_CODE"
-            exit 1
-          fi
-          
-          echo "=== 脚本执行完成 ==="
-          
-          # 为所有 HTML 文件添加时间戳注释
+          # 添加时间戳注释到 HTML
           find dist -name "*.html" -type f -exec sed -i "s|</head>|<!-- Build: $BUILD_TIMESTAMP | Commit: $COMMIT_SHA | Date: $BUILD_DATE --></head>|g" {} \;
           
-          # 在 HTML 中添加 meta 标签强制刷新（增强缓存破坏）
+          # 添加强制刷新 meta 标签
           find dist -name "*.html" -type f -exec sed -i "s|<head>|<head><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\">|g" {} \;
           
-          # 输出构建信息
-          echo "Build timestamp: $BUILD_TIMESTAMP"
-          echo "Build date: $BUILD_DATE"
-          echo "Commit SHA: $COMMIT_SHA"
-          echo "Files in dist/assets:"
-          ls -lh dist/assets/ || echo "No assets directory"
+          echo "✅ Meta 标签已添加"
+          echo ""
           
-          # 验证：显示修改后的 HTML 文件中的 JS/CSS 引用（确认版本号已添加）
-          echo "=== 验证 HTML 文件中的资源引用 ==="
-          find dist -name "*.html" -type f -exec grep -E "(src=|href=).*assets.*\.(js|css)" {} \;
+          # 二次保险：Node.js 脚本添加版本号参数
+          echo "🔧 执行 Node.js 版本号脚本..."
+          if [ -f "scripts/add-version-params.js" ]; then
+            node scripts/add-version-params.js
+            if [ $? -eq 0 ]; then
+              echo "✅ 版本号参数添加成功"
+            else
+              echo "⚠️ 脚本执行失败（非致命，Vite 插件已处理）"
+            fi
+          else
+            echo "⚠️ 脚本不存在（非致命，Vite 插件已处理）"
+          fi
+          echo ""
+          
+          # 【关键验证】显示 HTML 中实际的资源引用
+          echo "=========================================="
+          echo "🔍 验证：HTML 中的资源引用"
+          echo "=========================================="
+          find dist -name "*.html" -type f -exec grep -E "(src=|href=).*assets.*\.(js|css)" {} \; | head -10
+          echo ""
+          echo "=========================================="
+          echo "✅ 缓存破坏步骤完成"
+          echo "=========================================="
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
