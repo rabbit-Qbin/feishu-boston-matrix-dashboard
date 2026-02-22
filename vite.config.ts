@@ -9,10 +9,9 @@ export default defineConfig({
     assetsDir: 'assets',
     rollupOptions: {
       output: {
-        // 强制每次构建生成新 hash（添加动态时间戳）
-        assetFileNames: `assets/[name]-[hash]-${Date.now()}.[ext]`,
-        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
-        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
       }
     }
   },
