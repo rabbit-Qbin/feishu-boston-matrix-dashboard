@@ -142,7 +142,7 @@ function calculateResponsiveParams(chartDom: HTMLElement, dataLength: number) {
   };
 }
 
-// 渲染图表
+// 渲染图表（中轴线 = 仅基于传入的 data 条数做 50% 分位数/中位数，随筛选 50/100/全部 动态变化）
 function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分') {
   const chartDom = document.getElementById('chart');
   if (!chartDom) return;
@@ -155,6 +155,7 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
     return;
   }
 
+  // 仅用当前传入的 N 条（筛选后的 50/100/全部）计算，不做全表
   const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
   const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
   const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
@@ -162,12 +163,11 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
   const sizeMin = Math.min(...sizes);
   const sizeMax = Math.max(...sizes);
   
-  // 中轴线：基于「当前传入的这份数据」计算中位数再绘制
-  // 流程 = 读取配置(前50/100/全部、排序字段) → 按配置拉数据 → 本函数收到 data → 用 data 算中位数 → 画中轴线与四象限
+  // 中轴线 = 当前 N 条数据的需求/竞争 50% 分位数（中位数），随筛选动态变化
   const midX = median(xs);
   const midY = median(ys);
   
-  console.log('📊 中轴线计算（基于当前绘图数据）:', {
+  console.log(`📊 中轴线（分位数）：基于【当前筛选后的 ${data.length} 条】计算 50% 分位数`, {
     dataCount: data.length,
     midX,
     midY,
@@ -412,13 +412,11 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
         const categoryColor = getCategoryColor(categoryZh);
         const imageUrl = v[6] || ''; // 商品主图URL（已通过 getCellAttachmentUrls 转为可访问链接）
         
-        // 图片在标题左侧，图片高度与标题行数等高（flex stretch 使图片高度随标题自适应）
+        // 图片在标题左侧：固定尺寸方形，完整显示不随标题拉长；object-fit: cover 保证不变形
         const imageHtml = imageUrl ? `
-          <div style="display: flex; align-items: stretch; gap: 12px; margin-bottom: 8px;">
-            <div style="flex: 0 0 100px; min-width: 100px; min-height: 3em; overflow: hidden; border-radius: 6px; border: 1px solid #dfe1e6;">
-              <img src="${imageUrl}" alt="商品主图" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'">
-            </div>
-            <div style="flex: 1; display: flex; align-items: center;">
+          <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+            <img src="${imageUrl}" alt="商品主图" style="width: 100px; height: 100px; object-fit: cover; border-radius: 6px; border: 1px solid #dfe1e6; flex-shrink: 0;" onerror="this.style.display='none'">
+            <div style="flex: 1; min-width: 0;">
               <div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div>
             </div>
           </div>
@@ -1163,10 +1161,9 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     const limitNum = needLimit ? (typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit) : undefined;
     const targetRecordCount = limitNum && !isNaN(limitNum) && limitNum > 0 ? limitNum : undefined;
     
-    // 性能优化：减少获取的记录数
-    // 由于需要排序，获取筛选数量的2倍即可（减少数据量）
-    // 例如：选择"前50"，获取100条记录，排序后取前50条
-    const fetchRecordCount = targetRecordCount ? Math.min(300, Math.max(targetRecordCount * 2, 50)) : undefined;
+    // 必须拉取足够多的记录再排序，否则「前100」只是「前100 of 前200」而非全表前100
+    // 例如表共 500 条：至少拉 500 条，排序后取前 N；上限 2000 避免超大表超时
+    const fetchRecordCount = targetRecordCount ? Math.min(2000, Math.max(500, targetRecordCount * 2)) : undefined;
     
     console.log('📋 开始获取记录列表...', {
       filterLimit,
@@ -1215,7 +1212,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       return [];
     }
     
-    // 性能优化：两阶段加载策略
+    // 两阶段加载：阶段1 对「当前拉到的全部记录」算排序字段并排序，阶段2 只对最终前 N 条补全标题/主图等
     // 阶段1：只读取排序必需的字段（需求趋势得分、竞争强度得分、利润空间得分/综合得分）
     // 阶段2：排序后，只对最终显示的数据读取其他字段（标题、ASIN、分类、商品主图）
     // 🔥 VERSION: 20260219-4 - 强制生成新 hash
@@ -1547,10 +1544,9 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     const limitNum = needLimit ? (typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit) : undefined;
     const targetRecordCount = limitNum && !isNaN(limitNum) && limitNum > 0 ? limitNum : undefined;
     
-    // 性能优化：减少获取的记录数
-    // 由于需要排序，获取筛选数量的2倍即可（减少数据量）
-    // 例如：选择"前50"，获取100条记录，排序后取前50条
-    const fetchRecordCount = targetRecordCount ? Math.min(300, Math.max(targetRecordCount * 2, 50)) : undefined;
+    // 必须拉取足够多的记录再排序，否则「前100」只是「前100 of 前200」而非全表前100
+    // 例如表共 500 条：至少拉 500 条，排序后取前 N；上限 2000 避免超大表超时
+    const fetchRecordCount = targetRecordCount ? Math.min(2000, Math.max(500, targetRecordCount * 2)) : undefined;
     
     console.log('📋 开始获取记录列表...', {
       filterLimit,
@@ -2107,6 +2103,7 @@ async function init() {
       
       statusEl.textContent = `✓ 成功加载 ${data.length} 条数据`;
       statusEl.style.color = '#36b37e';
+      console.log('📊 传给图表的数据条数（中轴线将基于此条数动态计算）:', data.length);
       renderChart(data, sizeFieldName);
       // 图表渲染完成后，延迟隐藏状态消息
       setTimeout(() => {
