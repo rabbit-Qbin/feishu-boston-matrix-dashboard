@@ -57,6 +57,8 @@ function median(values: number[]): number {
 }
 
 let myChart: echarts.ECharts | null = null;
+/** 上次渲染使用的中轴线，resize 重绘时复用，避免变成「基于当前 N 条计算」 */
+let lastAxis: { midX: number; midY: number } | undefined;
 
 // 计算响应式参数（根据画布大小）
 function calculateResponsiveParams(chartDom: HTMLElement, dataLength: number) {
@@ -170,13 +172,13 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   const sizeMin = Math.min(...sizes);
   const sizeMax = Math.max(...sizes);
   
-  // 中轴线：优先用「全量数据」算好的 axis，与表内初步产品分类依据一致；未传则用当前 data 算
-  const midX = axis ? axis.midX : median(xs);
-  const midY = axis ? axis.midY : median(ys);
+  // 中轴线：优先用「全量数据」算好的 axis，与表内初步分类一致；未传则用 lastAxis（resize 复用）或当前 data 算
+  if (axis) lastAxis = axis;
+  const midX = axis ? axis.midX : (lastAxis ? lastAxis.midX : median(xs));
+  const midY = axis ? axis.midY : (lastAxis ? lastAxis.midY : median(ys));
   
-  console.log(axis
-    ? `📊 中轴线：使用全量数据中位数（与表内分类一致） midX=${midX.toFixed(2)}, midY=${midY.toFixed(2)}，当前展示 ${data.length} 条`
-    : `📊 中轴线：基于当前 ${data.length} 条计算 midX=${midX.toFixed(2)}, midY=${midY.toFixed(2)}`, {
+  const axisSource = axis ? '全量/指标基准表' : (lastAxis ? '复用上次' : '当前数据');
+  console.log(`📊 中轴线：${axisSource} midX=${midX.toFixed(2)}, midY=${midY.toFixed(2)}，当前展示 ${data.length} 条`, {
     dataCount: data.length,
     midX,
     midY,
@@ -760,11 +762,12 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
         // 使用 requestAnimationFrame 确保在下一帧渲染
         if (rafId) {
           cancelAnimationFrame(rafId);
-      }
+        }
         rafId = requestAnimationFrame(() => {
-          renderChart(data, sizeFieldLabel);
-      rafId = null;
-    });
+          // resize 重绘时传入上次的 axis，保持中轴线与全量/指标基准表一致
+          renderChart(data, sizeFieldLabel, lastAxis);
+          rafId = null;
+        });
       }
       
       resizeTimer = null;
