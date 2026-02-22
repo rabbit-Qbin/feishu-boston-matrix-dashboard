@@ -101,6 +101,7 @@ jobs:
         with:
           path: ./dist
 
+      # 必须：仅部署 dist，确保 Pages 使用构建产物而非源码
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
