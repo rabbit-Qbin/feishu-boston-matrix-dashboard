@@ -142,8 +142,14 @@ function calculateResponsiveParams(chartDom: HTMLElement, dataLength: number) {
   };
 }
 
-// 渲染图表（中轴线 = 仅基于传入的 data 条数做 50% 分位数/中位数，随筛选 50/100/全部 动态变化）
-function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分') {
+// 中轴线说明（与表内「初步产品分类」一致）：
+// - 使用字段：需求趋势得分（X 轴）→ midX，竞争强度得分（Y 轴）→ midY。取二者在「参与排序的全量数据」上的中位数。
+// - 计算量：对几百个数排序取中位数，耗时可忽略。筛选 50/100 只减少展示气泡数量，不改变中轴线。
+/** 加载结果：data 为展示用数据，midX/midY 为基于全量数据的中位数（与表内分类依据一致） */
+type LoadResult = { data: any[]; midX: number; midY: number };
+
+// 渲染图表。axis 传入时用其 midX/midY 画中轴线（推荐，与表内分类一致）；不传则用当前 data 算（兼容）
+function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分', axis?: { midX: number; midY: number }) {
   const chartDom = document.getElementById('chart');
   if (!chartDom) return;
   
@@ -155,7 +161,6 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
     return;
   }
 
-  // 仅用当前传入的 N 条（筛选后的 50/100/全部）计算，不做全表
   const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
   const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
   const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
@@ -163,16 +168,18 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
   const sizeMin = Math.min(...sizes);
   const sizeMax = Math.max(...sizes);
   
-  // 中轴线 = 当前 N 条数据的需求/竞争 50% 分位数（中位数），随筛选动态变化
-  const midX = median(xs);
-  const midY = median(ys);
+  // 中轴线：优先用「全量数据」算好的 axis，与表内初步产品分类依据一致；未传则用当前 data 算
+  const midX = axis ? axis.midX : median(xs);
+  const midY = axis ? axis.midY : median(ys);
   
-  console.log(`📊 中轴线（分位数）：基于【当前筛选后的 ${data.length} 条】计算 50% 分位数`, {
+  console.log(axis
+    ? `📊 中轴线：使用全量数据中位数（与表内分类一致） midX=${midX.toFixed(2)}, midY=${midY.toFixed(2)}，当前展示 ${data.length} 条`
+    : `📊 中轴线：基于当前 ${data.length} 条计算 midX=${midX.toFixed(2)}, midY=${midY.toFixed(2)}`, {
     dataCount: data.length,
     midX,
     midY,
-    xRange: `[${Math.min(...xs)}, ${Math.max(...xs)}]`,
-    yRange: `[${Math.min(...ys)}, ${Math.max(...ys)}]`
+    xRange: xs.length ? `[${Math.min(...xs)}, ${Math.max(...xs)}]` : '-',
+    yRange: ys.length ? `[${Math.min(...ys)}, ${Math.max(...ys)}]` : '-'
   });
   
   const roundDown = (n: number) => Math.floor(n / 10) * 10;
@@ -212,6 +219,8 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
     '淘汰产品': 0
   };
 
+  // 分类以表字段「初步产品分类」为准（含别名映射）；仅当无分类或无法匹配时才按当前中轴线 midX/midY 推算
+  // 筛选 50/100 只是减少气泡数量，不改变中轴线与象限定义，故不应用当前 N 条重新划分分类
   data.forEach(d => {
     let cat = (d.category || '').toString().trim();
     
@@ -244,7 +253,6 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
     }
     
     if (!categoryMap[cat]) categoryMap[cat] = [];
-    // 添加商品主图字段（第7个元素）
     categoryMap[cat].push([d.x, d.y, d.size, d.title, d.asin, cat, d.image || '']);
     categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
   });
@@ -412,11 +420,11 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
         const categoryColor = getCategoryColor(categoryZh);
         const imageUrl = v[6] || ''; // 商品主图URL（已通过 getCellAttachmentUrls 转为可访问链接）
         
-        // 图片在标题左侧：固定尺寸方形，完整显示不随标题拉长；object-fit: cover 保证不变形
+        // 图片固定尺寸，与标题栏相对垂直居中：标题多行时图片居中，标题少时标题居中
         const imageHtml = imageUrl ? `
-          <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
             <img src="${imageUrl}" alt="商品主图" style="width: 100px; height: 100px; object-fit: cover; border-radius: 6px; border: 1px solid #dfe1e6; flex-shrink: 0;" onerror="this.style.display='none'">
-            <div style="flex: 1; min-width: 0;">
+            <div style="flex: 1; min-width: 0; display: flex; align-items: center;">
               <div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div>
             </div>
           </div>
@@ -1106,7 +1114,7 @@ async function findTableByRequiredFieldsInBase(base: any): Promise<any> {
 }
 
 // Create/Config 状态：使用 dashboard.getPreviewData()
-async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldName?: string, filterLimit?: string | number): Promise<any[]> {
+async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldName?: string, filterLimit?: string | number): Promise<LoadResult> {
   console.log('🚀 Create/Config 状态：使用 dashboard.getPreviewData()');
   const startTime = Date.now();
   
@@ -1209,7 +1217,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     
     if (allRecords.length === 0) {
       console.warn('⚠️ 未获取到任何记录，请检查表是否有数据');
-      return [];
+      return { data: [], midX: 0, midY: 0 };
     }
     
     // 两阶段加载：阶段1 对「当前拉到的全部记录」算排序字段并排序，阶段2 只对最终前 N 条补全标题/主图等
@@ -1340,6 +1348,13 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     
     console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
     
+    // 中轴线：用「需求趋势得分」「竞争强度得分」在【全量 sortData】上的中位数，一次算完、耗时可忽略，与表内初步产品分类依据一致
+    const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
+    const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
+    const midX = median(allXs);
+    const midY = median(allYs);
+    console.log(`📊 中轴线（全量 ${sortData.length} 条）：需求趋势得分中位数 midX=${midX.toFixed(2)}，竞争强度得分中位数 midY=${midY.toFixed(2)}`);
+    
     // 先排序，取前N条
     let dataToLoad = sortData;
     if (sortFieldName && filterLimit && filterLimit !== 'all') {
@@ -1347,7 +1362,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       if (!isNaN(filterLimitNum) && filterLimitNum > 0) {
         console.log(`📋 按 ${sortFieldName} 排序，取前 ${filterLimitNum} 条...`);
         // 快速排序：使用 sortValue（如果存在）或 size（气泡大小字段）
-        dataToLoad.sort((a, b) => {
+        dataToLoad.sort((a: any, b: any) => {
           const aValue = a.sortValue !== undefined ? a.sortValue : a.size ?? 0;
           const bValue = b.sortValue !== undefined ? b.sortValue : b.size ?? 0;
           return bValue - aValue; // 降序
@@ -1474,7 +1489,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     const elapsed = Date.now() - startTime;
     console.log(`✅ 预览数据加载完成: ${parsedData.length} 条有效数据，耗时 ${(elapsed / 1000).toFixed(1)}s`);
     
-    return parsedData;
+    return { data: parsedData, midX, midY };
   } catch (error: any) {
     console.error('预览数据加载失败:', error);
     throw error;
@@ -1482,7 +1497,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
 }
 
 // View 状态：使用 bitable.base API（getData 也只返回计数，和 getPreviewData 一样的问题）
-async function loadViewData(dashboard: any, sizeFieldName: string, savedDataConditions: any[], sortFieldName?: string, filterLimit?: string | number): Promise<any[]> {
+async function loadViewData(dashboard: any, sizeFieldName: string, savedDataConditions: any[], sortFieldName?: string, filterLimit?: string | number): Promise<LoadResult> {
   console.log('🚀 View 状态：使用 bitable.base API');
   const startTime = Date.now();
   
@@ -1592,7 +1607,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     
     if (allRecords.length === 0) {
       console.warn('⚠️ 未获取到任何记录');
-      return [];
+      return { data: [], midX: 0, midY: 0 };
     }
     
     // 性能优化：如果用户选择了筛选数量，先排序再处理
@@ -1728,6 +1743,13 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     
     console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
     
+    // 中轴线：用「需求趋势得分」「竞争强度得分」在【全量 sortData】上的中位数，一次算完、耗时可忽略，与表内初步产品分类依据一致
+    const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
+    const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
+    const midX = median(allXs);
+    const midY = median(allYs);
+    console.log(`📊 中轴线（全量 ${sortData.length} 条）：需求趋势得分中位数 midX=${midX.toFixed(2)}，竞争强度得分中位数 midY=${midY.toFixed(2)}`);
+    
     // 先排序，取前N条
     let dataToLoad = sortData;
     if (sortFieldName && filterLimit && filterLimit !== 'all') {
@@ -1735,7 +1757,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
       if (!isNaN(filterLimitNum) && filterLimitNum > 0) {
         console.log(`📋 按 ${sortFieldName} 排序，取前 ${filterLimitNum} 条...`);
         // 快速排序：使用 sortValue（如果存在）或 size（气泡大小字段）
-        dataToLoad.sort((a, b) => {
+        dataToLoad.sort((a: any, b: any) => {
           const aValue = a.sortValue !== undefined ? a.sortValue : a.size ?? 0;
           const bValue = b.sortValue !== undefined ? b.sortValue : b.size ?? 0;
           return bValue - aValue; // 降序
@@ -1862,7 +1884,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     const elapsed = Date.now() - startTime;
     console.log(`✅ 数据加载完成: ${parsedData.length} 条有效数据，耗时 ${(elapsed / 1000).toFixed(1)}s`);
     
-    return parsedData;
+    return { data: parsedData, midX, midY };
   } catch (error: any) {
     console.error('数据加载失败:', error);
     throw error;
@@ -2004,8 +2026,8 @@ async function init() {
           const sortField = sizeField; // 排序字段和气泡大小字段相同
           const filterLimit = getSelectedFilterLimit();
           
-          const data = await loadPreviewData(dashboard, sizeField, sortField, filterLimit);
-          
+          const result = await loadPreviewData(dashboard, sizeField, sortField, filterLimit);
+          const data = result.data;
           if (data.length === 0) {
             statusEl.textContent = '⚠️ 暂无数据';
             statusEl.style.color = '#ff991f';
@@ -2013,7 +2035,7 @@ async function init() {
           } else {
             statusEl.textContent = `✓ 预览加载 ${data.length} 条数据`;
             statusEl.style.color = '#36b37e';
-            renderChart(data, sizeField);
+            renderChart(data, sizeField, { midX: result.midX, midY: result.midY });
             // 图表渲染完成后，延迟隐藏状态消息
             setTimeout(() => {
               statusEl.style.display = 'none';
@@ -2099,12 +2121,11 @@ async function init() {
       statusEl.textContent = '⏳ 正在加载数据...';
       statusEl.style.color = '#0065ff';
       
-      const data = await loadViewData(dashboard, sizeFieldName, savedDataConditions || [], sortFieldName, filterLimit);
-      
+      const result = await loadViewData(dashboard, sizeFieldName, savedDataConditions || [], sortFieldName, filterLimit);
+      const data = result.data;
       statusEl.textContent = `✓ 成功加载 ${data.length} 条数据`;
       statusEl.style.color = '#36b37e';
-      console.log('📊 传给图表的数据条数（中轴线将基于此条数动态计算）:', data.length);
-      renderChart(data, sizeFieldName);
+      renderChart(data, sizeFieldName, { midX: result.midX, midY: result.midY });
       // 图表渲染完成后，延迟隐藏状态消息
       setTimeout(() => {
         statusEl.style.display = 'none';
