@@ -13,7 +13,9 @@ const FIELD_NAMES = {
   title: '商品标题',
   asin: 'ASIN',
   category: '初步产品分类',
-  image: '商品主图'  // 新增商品主图字段
+  image: '商品主图',  // 新增商品主图字段
+  medianDemand: 'median_需求趋势得分',
+  medianCompetition: 'median_竞争强度得分'
 };
 
 // 颜色映射（修正：畅销红色，淘汰绿色，潜力黄色，稳健蓝色）
@@ -822,6 +824,44 @@ function toText(val: any): string {
   return String(extracted || '');
 }
 
+/** 从指标基准表读取中轴线：median_需求趋势得分 → midX，median_竞争强度得分 → midY（公式字段，基于全量结果） */
+async function getMedianAxisFromBenchmarkTable(bitableApp: any, benchmarkTableId: string): Promise<{ midX: number; midY: number } | null> {
+  try {
+    const benchTable = await bitableApp.base.getTableById(benchmarkTableId);
+    const recordListResult: any = await benchTable.getRecordListByPage({ pageSize: 1 });
+    const records = recordListResult?.records ? Array.from(recordListResult.records) : [];
+    if (records.length === 0) {
+      console.warn('⚠️ 指标基准表无记录');
+      return null;
+    }
+    const record = records[0] as { getCellByField: (id: string) => Promise<{ getValue: () => Promise<unknown> }> };
+    const fieldList = await benchTable.getFieldList();
+    let midXId: string | null = null;
+    let midYId: string | null = null;
+    for (const f of fieldList) {
+      const name = await f.getName();
+      if (name === FIELD_NAMES.medianDemand) midXId = f.id;
+      if (name === FIELD_NAMES.medianCompetition) midYId = f.id;
+    }
+    if (!midXId || !midYId) {
+      console.warn('⚠️ 指标基准表缺少字段：median_需求趋势得分 或 median_竞争强度得分');
+      return null;
+    }
+    const [cx, cy] = await Promise.all([
+      record.getCellByField(midXId).then((c: any) => c.getValue().then((v: any) => toNumber(v))),
+      record.getCellByField(midYId).then((c: any) => c.getValue().then((v: any) => toNumber(v)))
+    ]);
+    if (cx === undefined || cy === undefined || !isFinite(cx) || !isFinite(cy)) {
+      console.warn('⚠️ 指标基准表中轴线数值无效');
+      return null;
+    }
+    return { midX: cx, midY: cy };
+  } catch (e: any) {
+    console.warn('⚠️ 读取指标基准表中轴线失败:', e?.message || e);
+    return null;
+  }
+}
+
 // 动态查找包含所需字段的表
 async function findTableByRequiredFields(): Promise<any> {
   const requiredFields = [
@@ -1114,7 +1154,7 @@ async function findTableByRequiredFieldsInBase(base: any): Promise<any> {
 }
 
 // Create/Config 状态：使用 dashboard.getPreviewData()
-async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldName?: string, filterLimit?: string | number): Promise<LoadResult> {
+async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldName?: string, filterLimit?: string | number, benchmarkTableId?: string): Promise<LoadResult> {
   console.log('🚀 Create/Config 状态：使用 dashboard.getPreviewData()');
   const startTime = Date.now();
   
@@ -1128,6 +1168,15 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     const bitableApp = await workspace.getBitable(baseToken);
     if (!bitableApp) {
       throw new Error(`无法获取多维表格实例: ${baseToken}`);
+    }
+    
+    // 若配置了指标基准表，优先从该表读取中轴线（基于全量结果的公式字段）
+    let axisFromBenchmark: { midX: number; midY: number } | null = null;
+    if (benchmarkTableId && benchmarkTableId.trim()) {
+      axisFromBenchmark = await getMedianAxisFromBenchmarkTable(bitableApp, benchmarkTableId.trim());
+      if (axisFromBenchmark) {
+        console.log(`📊 中轴线：来自指标基准表 median_需求趋势得分/median_竞争强度得分 midX=${axisFromBenchmark.midX.toFixed(2)}, midY=${axisFromBenchmark.midY.toFixed(2)}`);
+      }
     }
     
     // 使用 bitable.base API 直接获取数据
@@ -1348,12 +1397,19 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     
     console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
     
-    // 中轴线：用「需求趋势得分」「竞争强度得分」在【全量 sortData】上的中位数，一次算完、耗时可忽略，与表内初步产品分类依据一致
-    const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
-    const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
-    const midX = median(allXs);
-    const midY = median(allYs);
-    console.log(`📊 中轴线（全量 ${sortData.length} 条）：需求趋势得分中位数 midX=${midX.toFixed(2)}，竞争强度得分中位数 midY=${midY.toFixed(2)}`);
+    // 中轴线：优先使用指标基准表公式字段（基于全量结果）；否则用当前 sortData 中位数
+    let midX: number;
+    let midY: number;
+    if (axisFromBenchmark) {
+      midX = axisFromBenchmark.midX;
+      midY = axisFromBenchmark.midY;
+    } else {
+      const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
+      const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
+      midX = median(allXs);
+      midY = median(allYs);
+      console.log(`📊 中轴线（当前 ${sortData.length} 条计算）：midX=${midX.toFixed(2)}，midY=${midY.toFixed(2)}`);
+    }
     
     // 先排序，取前N条
     let dataToLoad = sortData;
@@ -1505,20 +1561,30 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     // View 状态：getData 也只返回计数，改用 bitable.base API
     console.log('⚠️ getData 无法返回原始数据，改用 bitable.base API');
     
-    // 从配置中获取 baseToken 和 tableId
+    // 从配置中获取 baseToken、tableId、指标基准表 ID
     const config: any = await dashboard.getConfig();
     const baseToken = config?.dataConditions?.[0]?.baseToken || await getDefaultBaseToken(dashboard);
     const tableId = config?.dataConditions?.[0]?.tableId || config?.customConfig?.tableId;
+    const benchmarkTableId = config?.customConfig?.benchmarkTableId;
     
     if (!tableId) {
       throw new Error('View 状态下需要保存的 tableId，请重新配置组件');
     }
     
-    console.log(`📋 使用保存的配置: baseToken=${baseToken}, tableId=${tableId}`);
+    console.log(`📋 使用保存的配置: baseToken=${baseToken}, tableId=${tableId}, benchmarkTableId=${benchmarkTableId || '(未配置)'}`);
     
     const bitableApp = await workspace.getBitable(baseToken);
     if (!bitableApp) {
       throw new Error(`无法获取多维表格实例: ${baseToken}`);
+    }
+    
+    // 若配置了指标基准表，优先从该表读取中轴线（基于全量结果的公式字段）
+    let axisFromBenchmark: { midX: number; midY: number } | null = null;
+    if (benchmarkTableId && String(benchmarkTableId).trim()) {
+      axisFromBenchmark = await getMedianAxisFromBenchmarkTable(bitableApp, String(benchmarkTableId).trim());
+      if (axisFromBenchmark) {
+        console.log(`📊 中轴线：来自指标基准表 midX=${axisFromBenchmark.midX.toFixed(2)}, midY=${axisFromBenchmark.midY.toFixed(2)}`);
+      }
     }
     
     const table = await bitableApp.base.getTableById(tableId);
@@ -1743,12 +1809,19 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     
     console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
     
-    // 中轴线：用「需求趋势得分」「竞争强度得分」在【全量 sortData】上的中位数，一次算完、耗时可忽略，与表内初步产品分类依据一致
-    const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
-    const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
-    const midX = median(allXs);
-    const midY = median(allYs);
-    console.log(`📊 中轴线（全量 ${sortData.length} 条）：需求趋势得分中位数 midX=${midX.toFixed(2)}，竞争强度得分中位数 midY=${midY.toFixed(2)}`);
+    // 中轴线：优先使用指标基准表公式字段（基于全量结果）；否则用当前 sortData 中位数
+    let midX: number;
+    let midY: number;
+    if (axisFromBenchmark) {
+      midX = axisFromBenchmark.midX;
+      midY = axisFromBenchmark.midY;
+    } else {
+      const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
+      const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
+      midX = median(allXs);
+      midY = median(allYs);
+      console.log(`📊 中轴线（当前 ${sortData.length} 条计算）：midX=${midX.toFixed(2)}，midY=${midY.toFixed(2)}`);
+    }
     
     // 先排序，取前N条
     let dataToLoad = sortData;
@@ -1861,7 +1934,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
               image: imageUrl
             };
         } catch (e: any) {
-            console.warn(`⚠️ 解析记录失败:`, e?.message);
+          console.warn(`⚠️ 解析记录失败:`, e?.message);
           return null;
         }
       });
@@ -1940,6 +2013,11 @@ async function init() {
                 <input type="radio" name="filterLimit" value="20"> 前20
               </label>
             </div>
+            <div class="field-group" style="margin-bottom: 20px; font-size: 13px; color: #5e6c84;">
+              <div style="font-weight: 600; margin-bottom: 8px; color: #172b4d;">中轴线（指标基准表）</div>
+              <div style="font-size: 12px; color: #6b778c; margin-bottom: 6px;">填写指标基准表 ID 时，中轴线使用该表中的 median_需求趋势得分、median_竞争强度得分（基于全量结果）；不填则按当前数据计算。</div>
+              <input type="text" id="benchmark-table-id" placeholder="例如 tblBbKcT94Gr9SLY" style="width: 100%; padding: 8px 10px; border: 1px solid #dfe1e6; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
+            </div>
             <button id="save-btn" style="margin-top: auto; width: 100%; padding: 10px 24px; font-size: 14px; font-weight: 600; background: #0052cc; color: white; border: none; border-radius: 4px; cursor: pointer;">
               确定
             </button>
@@ -1960,6 +2038,20 @@ async function init() {
         const checked = document.querySelector('input[name="filterLimit"]:checked') as HTMLInputElement | null;
         return checked?.value || 'all';
       };
+      
+      const getSelectedBenchmarkTableId = () => {
+        const el = document.getElementById('benchmark-table-id') as HTMLInputElement | null;
+        return el?.value?.trim() || '';
+      };
+      
+      // 从已保存配置恢复（Config 状态）
+      try {
+        const config: any = await dashboard.getConfig();
+        if (config?.customConfig?.benchmarkTableId) {
+          const el = document.getElementById('benchmark-table-id') as HTMLInputElement | null;
+          if (el) el.value = String(config.customConfig.benchmarkTableId);
+        }
+      } catch (_) {}
       
       // 绑定"确定"按钮
       saveBtn.onclick = async () => {
@@ -1998,10 +2090,11 @@ async function init() {
           
           console.log('💾 保存dataConditions:', JSON.stringify(dataConditions, null, 2));
           
+          const benchmarkTableId = getSelectedBenchmarkTableId() || undefined;
           // 保存dataConditions和customConfig（View状态下getData()会使用保存的dataConditions）
           await dashboard.saveConfig({
             dataConditions: [dataConditions], // SDK 需要数组格式
-            customConfig: { sizeFieldName, sortFieldName, filterLimit, tableId, fieldIds, baseToken }
+            customConfig: { sizeFieldName, sortFieldName, filterLimit, tableId, fieldIds, baseToken, benchmarkTableId }
           });
           
           statusEl.textContent = '✓ 配置已保存，组件将自动添加';
@@ -2026,7 +2119,7 @@ async function init() {
           const sortField = sizeField; // 排序字段和气泡大小字段相同
           const filterLimit = getSelectedFilterLimit();
           
-          const result = await loadPreviewData(dashboard, sizeField, sortField, filterLimit);
+          const result = await loadPreviewData(dashboard, sizeField, sortField, filterLimit, getSelectedBenchmarkTableId() || undefined);
           const data = result.data;
           if (data.length === 0) {
             statusEl.textContent = '⚠️ 暂无数据';
@@ -2058,12 +2151,12 @@ async function init() {
       // 初始加载预览
       await loadPreview();
       
-      // 字段切换时重新加载预览
+      // 字段或基准表切换时重新加载预览
       document.querySelectorAll('input[name="sizeField"], input[name="filterLimit"]').forEach((el) => {
-        el.addEventListener('change', () => {
-          loadPreview();
-        });
+        el.addEventListener('change', () => loadPreview());
       });
+      const benchmarkInput = document.getElementById('benchmark-table-id');
+      if (benchmarkInput) benchmarkInput.addEventListener('blur', () => loadPreview());
       
       return;
     }
