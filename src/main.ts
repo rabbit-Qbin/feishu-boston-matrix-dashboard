@@ -162,13 +162,12 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
   const sizeMin = Math.min(...sizes);
   const sizeMax = Math.max(...sizes);
   
-  // 使用中位数作为四象限分界线
-  // 重要：必须基于当前筛选后的数据计算中位数，而不是所有产品
-  // 这样四象限才能正确反映筛选后数据的分布
+  // 中轴线：基于「当前传入的这份数据」计算中位数再绘制
+  // 流程 = 读取配置(前50/100/全部、排序字段) → 按配置拉数据 → 本函数收到 data → 用 data 算中位数 → 画中轴线与四象限
   const midX = median(xs);
   const midY = median(ys);
   
-  console.log('📊 中位数计算:', {
+  console.log('📊 中轴线计算（基于当前绘图数据）:', {
     dataCount: data.length,
     midX,
     midY,
@@ -179,10 +178,19 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
   const roundDown = (n: number) => Math.floor(n / 10) * 10;
   const roundUp = (n: number) => Math.ceil(n / 10) * 10;
   
-  const xMin = roundDown(Math.min(...xs));
-  const xMax = roundUp(Math.max(...xs));
-  const yMin = roundDown(Math.min(...ys));
-  const yMax = roundUp(Math.max(...ys));
+  let xMin = roundDown(Math.min(...xs));
+  let xMax = roundUp(Math.max(...xs));
+  let yMin = roundDown(Math.min(...ys));
+  let yMax = roundUp(Math.max(...ys));
+  
+  // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
+  const eps = 1e-6;
+  if (xMax - xMin < eps) { xMin = Math.min(xMin, midX) - 5; xMax = Math.max(xMax, midX) + 5; }
+  if (yMax - yMin < eps) { yMin = Math.min(yMin, midY) - 5; yMax = Math.max(yMax, midY) + 5; }
+  
+  // 确保中轴线在可视范围内，避免 ECharts markLine/markArea 报错
+  const safeMidX = Math.max(xMin + eps, Math.min(xMax - eps, midX));
+  const safeMidY = Math.max(yMin + eps, Math.min(yMax - eps, midY));
 
   // 计算分位数（用于气泡大小和透明度计算）
   const sortedSizes = sizes.slice().sort((a, b) => a - b);
@@ -402,18 +410,20 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
         const titleText = v[3] || '未知';
         const categoryZh = v[5] || '其他';
         const categoryColor = getCategoryColor(categoryZh);
-        const imageUrl = v[6] || ''; // 商品主图URL
+        const imageUrl = v[6] || ''; // 商品主图URL（已通过 getCellAttachmentUrls 转为可访问链接）
         
-        // 如果有商品主图，显示在标题左侧
+        // 图片在标题左侧，图片高度与标题行数等高（flex stretch 使图片高度随标题自适应）
         const imageHtml = imageUrl ? `
-          <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
-            <img src="${imageUrl}" alt="商品主图" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid #dfe1e6; flex-shrink: 0;" onerror="this.style.display='none'">
-            <div style="flex: 1;">
-            <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d; white-space: normal; word-break: break-word;">${titleText}</div>
+          <div style="display: flex; align-items: stretch; gap: 12px; margin-bottom: 8px;">
+            <div style="flex: 0 0 100px; min-width: 100px; min-height: 3em; overflow: hidden; border-radius: 6px; border: 1px solid #dfe1e6;">
+              <img src="${imageUrl}" alt="商品主图" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'">
+            </div>
+            <div style="flex: 1; display: flex; align-items: center;">
+              <div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div>
             </div>
           </div>
         ` : `
-          <div style="font-weight: 600; margin-bottom: 6px; color: #172b4d; white-space: normal; word-break: break-word;">${titleText}</div>
+          <div style="font-weight: 600; margin-bottom: 8px; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div>
         `;
         
         return `
@@ -505,18 +515,18 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
           data: [
             [
               { xAxis: xMin, yAxis: yMax, itemStyle: { color: 'rgba(255, 193, 7, 0.30)' } },
-              { xAxis: midX, yAxis: midY }
+              { xAxis: safeMidX, yAxis: safeMidY }
             ],
             [
-              { xAxis: midX, yAxis: yMax, itemStyle: { color: 'rgba(214, 88, 98, 0.30)' } },
-              { xAxis: xMax, yAxis: midY }
+              { xAxis: safeMidX, yAxis: yMax, itemStyle: { color: 'rgba(214, 88, 98, 0.30)' } },
+              { xAxis: xMax, yAxis: safeMidY }
             ],
             [
-              { xAxis: xMin, yAxis: midY, itemStyle: { color: 'rgba(92, 186, 120, 0.26)' } },
-              { xAxis: midX, yAxis: yMin }
+              { xAxis: xMin, yAxis: safeMidY, itemStyle: { color: 'rgba(92, 186, 120, 0.26)' } },
+              { xAxis: safeMidX, yAxis: yMin }
             ],
             [
-              { xAxis: midX, yAxis: midY, itemStyle: { color: 'rgba(97, 131, 217, 0.26)' } },
+              { xAxis: safeMidX, yAxis: safeMidY, itemStyle: { color: 'rgba(97, 131, 217, 0.26)' } },
               { xAxis: xMax, yAxis: yMin }
             ]
           ]
@@ -534,11 +544,12 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分')
           symbol: ['none', 'none'],
           lineStyle: { color: '#666', type: 'dashed', width: 1.5, opacity: 0.7 },
           label: { show: false },
-          data: [{ xAxis: midX }, { yAxis: midY }]
+          data: [{ xAxis: safeMidX }, { yAxis: safeMidY }]
         },
         z: 999,
         zlevel: 10
       }
+      // 中轴线：竖线 x=safeMidX，横线 y=safeMidY（由当前 data 的中位数计算）
     ],
     graphic: [
       // 参考 index-DME9M7UI.js：使用百分比定位四象限背景
@@ -1352,8 +1363,8 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     // 阶段2：只对最终显示的数据读取其他字段（并发处理）
     console.log('📋 阶段2：读取其他字段（标题、ASIN、分类、商品主图）...');
     const parsedData: any[] = [];
-    const finalBatchSize = 30; // 增大批量大小，配合并发处理
-    const concurrentBatchesPhase2 = 5; // 同时处理5个批次
+    const finalBatchSize = 25; // 批量大小，避免单批过多导致超时
+    const concurrentBatchesPhase2 = 3; // 降低并发，减少 API 限流
     
     // 创建所有批次
     const finalBatches: Array<{ batch: any[]; batchNum: number }> = [];
@@ -1409,13 +1420,24 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
               imageCell ? imageCell.getValue() : Promise.resolve(null)
             ]);
             
-            // 处理商品主图
+            // 处理商品主图：飞书附件字段返回 token，需用 table.getCellAttachmentUrls 转为可访问 URL
             let imageUrl = '';
             if (imageValue) {
               if (Array.isArray(imageValue) && imageValue.length > 0) {
                 const firstAttachment = imageValue[0];
-                imageUrl = firstAttachment?.url || firstAttachment?.token || '';
-              } else if (typeof imageValue === 'string') {
+                const url = firstAttachment?.url;
+                const token = firstAttachment?.token;
+                if (url && typeof url === 'string' && url.startsWith('http')) {
+                  imageUrl = url;
+                } else if (token && requiredFieldIds.image) {
+                  try {
+                    const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
+                    imageUrl = urls?.[0] || '';
+                  } catch (e: any) {
+                    console.warn(`⚠️ 获取附件URL失败:`, e?.message);
+                  }
+                }
+              } else if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
                 imageUrl = imageValue;
               }
             }
@@ -1730,8 +1752,8 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     // 阶段2：只对最终显示的数据读取其他字段（并发处理）
     console.log('📋 阶段2：读取其他字段（标题、ASIN、分类、商品主图）...');
     const parsedData: any[] = [];
-    const finalBatchSize = 30; // 增大批量大小，配合并发处理
-    const concurrentBatchesPhase2 = 5; // 同时处理5个批次
+    const finalBatchSize = 25; // 批量大小，避免单批过多导致超时
+    const concurrentBatchesPhase2 = 3; // 降低并发，减少 API 限流
     
     // 创建所有批次
     const finalBatches: Array<{ batch: any[]; batchNum: number }> = [];
@@ -1787,13 +1809,24 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
               imageCell ? imageCell.getValue() : Promise.resolve(null)
             ]);
             
-            // 处理商品主图
+            // 处理商品主图：飞书附件字段返回 token，需用 table.getCellAttachmentUrls 转为可访问 URL
             let imageUrl = '';
             if (imageValue) {
               if (Array.isArray(imageValue) && imageValue.length > 0) {
                 const firstAttachment = imageValue[0];
-                imageUrl = firstAttachment?.url || firstAttachment?.token || '';
-              } else if (typeof imageValue === 'string') {
+                const url = firstAttachment?.url;
+                const token = firstAttachment?.token;
+                if (url && typeof url === 'string' && url.startsWith('http')) {
+                  imageUrl = url;
+                } else if (token && requiredFieldIds.image) {
+                  try {
+                    const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
+                    imageUrl = urls?.[0] || '';
+                  } catch (e: any) {
+                    console.warn(`⚠️ 获取附件URL失败:`, e?.message);
+                  }
+                }
+              } else if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
                 imageUrl = imageValue;
               }
             }
