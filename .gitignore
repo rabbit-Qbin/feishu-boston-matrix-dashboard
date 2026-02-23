@@ -1,0 +1,17 @@
+# 依赖（不要提交，用 npm install 还原）
+node_modules/
+
+# 构建产物（本地/CI 执行 npm run build 生成，一般不提交）
+dist/
+
+# 本地/环境
+.env
+.env.local
+*.log
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
