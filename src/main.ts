@@ -434,7 +434,13 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
             <div style="flex: 1; min-width: 0;"><div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div></div>
           </div>
         `;
-        return `<div style="max-width: 320px;">${imageHtml}<div style="font-size: 12px; color: #5e6c84;">ASIN: ${v[4] || 'N/A'}<br/>需求趋势: ${Number(v[0]).toFixed(2)} | 竞争强度: ${Number(v[1]).toFixed(2)} | ${sizeFieldLabel}: ${Number(v[2]).toFixed(2)}<br/>分类: <span style="color:${categoryColor}">${categoryZh}</span></div></div>`;
+        // 标签栏下方：利润空间得分→利润空间；需求/竞争/利润及各自得分用不同颜色；字号调大（ASIN 到分类）
+        const sizeLabelShort = sizeFieldLabel === '利润空间得分' ? '利润空间' : sizeFieldLabel;
+        const demandVal = Number(v[0]).toFixed(2);
+        const competitionVal = Number(v[1]).toFixed(2);
+        const sizeVal = Number(v[2]).toFixed(2);
+        const scoreHtml = `<span style="color:#0052cc;font-weight:600;">需求趋势: ${demandVal}</span> <span style="color:#36b37e;font-weight:600;">竞争强度: ${competitionVal}</span> <span style="color:#ff991f;font-weight:600;">${sizeLabelShort}: ${sizeVal}</span>`;
+        return `<div style="max-width: 320px;">${imageHtml}<div style="font-size: 14px; color: #5e6c84; line-height: 1.6;">ASIN: <span style="color:#172b4d;font-weight:500;">${v[4] || 'N/A'}</span><br/>${scoreHtml}<br/>分类: <span style="color:${categoryColor};font-weight:600;">${categoryZh}</span></div></div>`;
       }
     },
     legend: {
