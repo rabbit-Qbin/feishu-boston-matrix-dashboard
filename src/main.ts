@@ -412,7 +412,7 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
     },
     tooltip: {
       trigger: 'item',
-      confine: true, // 确保 tooltip 显示在画布内，不溢出
+      confine: true,
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#ddd',
       borderWidth: 1,
@@ -422,32 +422,19 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
         const titleText = v[3] || '未知';
         const categoryZh = v[5] || '其他';
         const categoryColor = getCategoryColor(categoryZh);
-        const imageUrl = v[6] || ''; // 商品主图URL（已通过 getCellAttachmentUrls 转为可访问链接）
-        
-        // 图片固定尺寸，与标题栏相对垂直居中：标题多行时图片居中，标题少时标题居中
-        const imageHtml = imageUrl ? `
+        const imageUrl = v[6] || ''; // 商品主图：加载时已拉取（选品结果表内「查找引用」的商品主图），一直用该 URL 显示
+        const imageHtml = `
           <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-            <img src="${imageUrl}" alt="商品主图" style="width: 100px; height: 100px; object-fit: cover; border-radius: 6px; border: 1px solid #dfe1e6; flex-shrink: 0;" onerror="this.style.display='none'">
-            <div style="flex: 1; min-width: 0; display: flex; align-items: center;">
-              <div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div>
+            <div style="width: 100px; height: 100px; flex-shrink: 0; border-radius: 6px; border: 1px solid #dfe1e6; overflow: hidden; background: #f4f5f7; display: flex; align-items: center; justify-content: center;">
+              ${imageUrl
+                ? `<img src="${imageUrl}" alt="商品主图" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='block');">
+              <span style="display:none;color:#97a0af;font-size:11px;">暂无主图</span>`
+                : '<span style="color: #97a0af; font-size: 11px;">暂无主图</span>'}
             </div>
-          </div>
-        ` : `
-          <div style="font-weight: 600; margin-bottom: 8px; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div>
-        `;
-        
-        return `
-          <div style="max-width: 320px; word-wrap: break-word; line-height: 1.8;">
-            ${imageHtml}
-            <div style="font-size: 12px; color: #5e6c84;">
-              <div>ASIN: <span style="color: #172b4d; font-weight: 500;">${v[4] || 'N/A'}</span></div>
-              <div>需求趋势得分: <span style="color: #0052cc; font-weight: 600;">${v[0].toFixed(2)}</span></div>
-              <div>竞争强度得分: <span style="color: #36b37e; font-weight: 600;">${v[1].toFixed(2)}</span></div>
-              <div>${sizeFieldLabel}: <span style="color: #ff991f; font-weight: 600;">${v[2].toFixed(2)}</span></div>
-              <div style="margin-top: 4px; padding-top: 4px; border-top: 1px solid #dfe1e6;">分类: <span style="color: ${categoryColor}; font-weight: 600;">${categoryZh}</span></div>
-            </div>
+            <div style="flex: 1; min-width: 0;"><div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div></div>
           </div>
         `;
+        return `<div style="max-width: 320px;">${imageHtml}<div style="font-size: 12px; color: #5e6c84;">ASIN: ${v[4] || 'N/A'}<br/>需求趋势: ${Number(v[0]).toFixed(2)} | 竞争强度: ${Number(v[1]).toFixed(2)} | ${sizeFieldLabel}: ${Number(v[2]).toFixed(2)}<br/>分类: <span style="color:${categoryColor}">${categoryZh}</span></div></div>`;
       }
     },
     legend: {
@@ -827,6 +814,40 @@ function toText(val: any): string {
   return String(extracted || '');
 }
 
+/** 从飞书附件/关联/查找引用字段取值中解析出第一个附件的 url 或 token（选品结果表「查找引用的商品主图」同此格式） */
+function parseFirstAttachmentUrlOrToken(imageValue: any): { url?: string; token?: string } {
+  if (!imageValue) return {};
+  // 关联、查找引用等可能返回 { type, value: [...] }；也支持直接数组
+  const raw = (imageValue && typeof imageValue === 'object' && Array.isArray(imageValue.value))
+    ? imageValue.value
+    : Array.isArray(imageValue)
+      ? imageValue
+      : null;
+  if (!raw || raw.length === 0) return {};
+  const first = raw[0];
+  if (!first || typeof first !== 'object') return {};
+  const url = first.url;
+  const token = first.token;
+  if (url && typeof url === 'string' && url.startsWith('http')) return { url };
+  if (token && typeof token === 'string') return { token };
+  return {};
+}
+
+/** 解析指标基准表 ID：优先用配置的 ID；未配置时在本 base 内按表名查找「指标基准表」（或名称包含该关键字） */
+async function resolveBenchmarkTableId(base: any, configBenchmarkId?: string | null): Promise<string | null> {
+  const trimmed = configBenchmarkId && String(configBenchmarkId).trim();
+  if (trimmed) return trimmed;
+  const tableList = await base.getTableList();
+  for (const t of tableList) {
+    const name = await t.getName();
+    if (name === '指标基准表' || (name && name.includes('指标基准'))) {
+      console.log(`📊 中轴线：未配置基准表 ID，已按表名找到「${name}」tableId=${t.id}`);
+      return t.id;
+    }
+  }
+  return null;
+}
+
 /** 从指标基准表读取中轴线：median_需求趋势得分 → midX，median_竞争强度得分 → midY（公式字段，基于全量结果） */
 async function getMedianAxisFromBenchmarkTable(bitableApp: any, benchmarkTableId: string): Promise<{ midX: number; midY: number } | null> {
   try {
@@ -1173,12 +1194,14 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       throw new Error(`无法获取多维表格实例: ${baseToken}`);
     }
     
-    // 若配置了指标基准表，优先从该表读取中轴线（基于全量结果的公式字段）
+    // 中轴线：优先从指标基准表读取（median_需求趋势得分、median_竞争强度得分，基于全量结果的公式字段）
+    // 未配置 ID 时自动按表名查找「指标基准表」
     let axisFromBenchmark: { midX: number; midY: number } | null = null;
-    if (benchmarkTableId && benchmarkTableId.trim()) {
-      axisFromBenchmark = await getMedianAxisFromBenchmarkTable(bitableApp, benchmarkTableId.trim());
+    const resolvedBenchmarkId = await resolveBenchmarkTableId(bitableApp.base, benchmarkTableId);
+    if (resolvedBenchmarkId) {
+      axisFromBenchmark = await getMedianAxisFromBenchmarkTable(bitableApp, resolvedBenchmarkId);
       if (axisFromBenchmark) {
-        console.log(`📊 中轴线：来自指标基准表 median_需求趋势得分/median_竞争强度得分 midX=${axisFromBenchmark.midX.toFixed(2)}, midY=${axisFromBenchmark.midY.toFixed(2)}`);
+        console.log(`📊 中轴线：来自指标基准表（全量结果）median_需求趋势得分/median_竞争强度得分 midX=${axisFromBenchmark.midX.toFixed(2)}, midY=${axisFromBenchmark.midY.toFixed(2)}`);
       }
     }
     
@@ -1491,25 +1514,21 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
               imageCell ? imageCell.getValue() : Promise.resolve(null)
             ]);
             
-            // 处理商品主图：飞书附件字段返回 token，需用 table.getCellAttachmentUrls 转为可访问 URL
+            // 处理商品主图：选品结果表内「查找引用的商品主图」拉取一次，一直显示。兼容：直接数组、关联/查找引用 { type, value: [...] }
             let imageUrl = '';
-            if (imageValue) {
-              if (Array.isArray(imageValue) && imageValue.length > 0) {
-                const firstAttachment = imageValue[0];
-                const url = firstAttachment?.url;
-                const token = firstAttachment?.token;
-                if (url && typeof url === 'string' && url.startsWith('http')) {
-                  imageUrl = url;
-                } else if (token && requiredFieldIds.image) {
-                  try {
-                    const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
-                    imageUrl = urls?.[0] || '';
-                  } catch (e: any) {
-                    console.warn(`⚠️ 获取附件URL失败:`, e?.message);
-                  }
+            if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+              imageUrl = imageValue;
+            } else {
+              const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
+              if (directUrl) {
+                imageUrl = directUrl;
+              } else if (token && requiredFieldIds.image) {
+                try {
+                  const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
+                  imageUrl = urls?.[0] || '';
+                } catch (e: any) {
+                  console.warn(`⚠️ 获取附件URL失败 record=${record.id}:`, e?.message);
                 }
-              } else if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-                imageUrl = imageValue;
               }
             }
             
@@ -1903,25 +1922,21 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
               imageCell ? imageCell.getValue() : Promise.resolve(null)
             ]);
             
-            // 处理商品主图：飞书附件字段返回 token，需用 table.getCellAttachmentUrls 转为可访问 URL
+            // 处理商品主图：选品结果表内「查找引用的商品主图」拉取一次，一直显示。兼容：直接数组、关联/查找引用 { type, value: [...] }
             let imageUrl = '';
-            if (imageValue) {
-              if (Array.isArray(imageValue) && imageValue.length > 0) {
-                const firstAttachment = imageValue[0];
-                const url = firstAttachment?.url;
-                const token = firstAttachment?.token;
-                if (url && typeof url === 'string' && url.startsWith('http')) {
-                  imageUrl = url;
-                } else if (token && requiredFieldIds.image) {
-                  try {
-                    const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
-                    imageUrl = urls?.[0] || '';
-                  } catch (e: any) {
-                    console.warn(`⚠️ 获取附件URL失败:`, e?.message);
-                  }
+            if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+              imageUrl = imageValue;
+            } else {
+              const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
+              if (directUrl) {
+                imageUrl = directUrl;
+              } else if (token && requiredFieldIds.image) {
+                try {
+                  const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
+                  imageUrl = urls?.[0] || '';
+                } catch (e: any) {
+                  console.warn(`⚠️ 获取附件URL失败 record=${record.id}:`, e?.message);
                 }
-              } else if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-                imageUrl = imageValue;
               }
             }
             
