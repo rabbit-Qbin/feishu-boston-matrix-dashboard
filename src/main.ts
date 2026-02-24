@@ -49,9 +49,10 @@ function getCategoryColor(categoryZh: string): string {
   return colorMap[categoryZh] || colorMap['其他'];
 }
 
+/** 假定 values 已为有效数字数组，仅做排序取中位数，避免重复 filter */
 function median(values: number[]): number {
-  const arr = values.filter(v => typeof v === 'number' && isFinite(v)).slice().sort((a, b) => a - b);
-  if (arr.length === 0) return 0;
+  if (values.length === 0) return 0;
+  const arr = values.slice().sort((a, b) => a - b);
   const mid = Math.floor(arr.length / 2);
   return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
 }
@@ -165,13 +166,20 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
     return;
   }
 
-  const xs = data.map(d => d.x).filter(v => typeof v === 'number' && isFinite(v));
-  const ys = data.map(d => d.y).filter(v => typeof v === 'number' && isFinite(v));
-  const sizes = data.map(d => d.size).filter(v => typeof v === 'number' && isFinite(v));
-  
-  const sizeMin = Math.min(...sizes);
-  const sizeMax = Math.max(...sizes);
-  
+  // 单次遍历收集有效 x/y/size，减少多次 map+filter
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const sizes: number[] = [];
+  for (let i = 0; i < data.length; i++) {
+    const d = data[i];
+    const x = d.x, y = d.y, sz = d.size;
+    if (typeof x === 'number' && isFinite(x)) xs.push(x);
+    if (typeof y === 'number' && isFinite(y)) ys.push(y);
+    if (typeof sz === 'number' && isFinite(sz)) sizes.push(sz);
+  }
+  const sizeMin = sizes.length ? Math.min(...sizes) : 0;
+  const sizeMax = sizes.length ? Math.max(...sizes) : 0;
+
   // 中轴线：优先用「全量数据」算好的 axis，与表内初步分类一致；未传则用 lastAxis（resize 复用）或当前 data 算
   if (axis) lastAxis = axis;
   const midX = axis ? axis.midX : (lastAxis ? lastAxis.midX : median(xs));
@@ -203,16 +211,23 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   const safeMidX = Math.max(xMin + eps, Math.min(xMax - eps, midX));
   const safeMidY = Math.max(yMin + eps, Math.min(yMax - eps, midY));
 
-  // 计算分位数（用于气泡大小和透明度计算）
-  const sortedSizes = sizes.slice().sort((a, b) => a - b);
-  const len = sortedSizes.length;
-  const q10 = len ? sortedSizes[Math.floor(len * 0.10)] : sizeMin;
-  const q20 = len ? sortedSizes[Math.floor(len * 0.20)] : sizeMin;
-  const q30 = len ? sortedSizes[Math.floor(len * 0.30)] : sizeMin;
-  const q40 = len ? sortedSizes[Math.floor(len * 0.40)] : sizeMin;
-  const q60 = len ? sortedSizes[Math.floor(len * 0.60)] : sizeMin;
-  const q80 = len ? sortedSizes[Math.floor(len * 0.80)] : sizeMin;
-  const q90 = len ? sortedSizes[Math.floor(len * 0.90)] : sizeMax;
+  // 按 size 降序排序一次，供分位数与排名共用，避免多次拷贝排序
+  const sortedBySize = data.slice().sort((a, b) => b.size - a.size);
+  const sizeRankMap = new Map<string, number>();
+  sortedBySize.forEach((item, index) => {
+    sizeRankMap.set(`${item.size}-${item.title}`, index + 1);
+  });
+
+  // 分位数：复用 sortedBySize（降序），用下标换算避免再拷贝排序
+  const len = sortedBySize.length;
+  const idx = (p: number) => len - 1 - Math.floor(len * p);
+  const q10 = len ? sortedBySize[idx(0.10)]?.size ?? sizeMin : sizeMin;
+  const q20 = len ? sortedBySize[idx(0.20)]?.size ?? sizeMin : sizeMin;
+  const q30 = len ? sortedBySize[idx(0.30)]?.size ?? sizeMin : sizeMin;
+  const q40 = len ? sortedBySize[idx(0.40)]?.size ?? sizeMin : sizeMin;
+  const q60 = len ? sortedBySize[idx(0.60)]?.size ?? sizeMin : sizeMin;
+  const q80 = len ? sortedBySize[idx(0.80)]?.size ?? sizeMin : sizeMin;
+  const q90 = len ? sortedBySize[idx(0.90)]?.size ?? sizeMax : sizeMax;
 
   // 分组统计
   const categoryMap: Record<string, any[]> = {};
@@ -263,14 +278,6 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
 
   // 计算响应式参数（必须在所有使用之前）
   const responsive = calculateResponsiveParams(chartDom, data.length);
-
-  // 参考 index-DME9M7UI.js：按排名计算气泡大小和透明度
-  const sortedBySize = data.slice().sort((a, b) => b.size - a.size);
-  const sizeRankMap = new Map<string, number>();
-  sortedBySize.forEach((item, index) => {
-    const key = `${item.size}-${item.title}`;
-    sizeRankMap.set(key, index + 1);
-  });
 
   // 计算自适应缩放因子（参考 index-DME9M7UI.js）
   const xRange = xMax - xMin;
@@ -333,37 +340,41 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
     }
   }
 
+  const withAlphaCache: Record<string, string> = {};
   function withAlpha(rgba: string, alpha: number): string {
-    // 支持多种颜色格式
-    // 格式1: rgba(r, g, b, oldAlpha)
+    const key = `${rgba}-${alpha}`;
+    if (withAlphaCache[key]) return withAlphaCache[key];
+    let out: string;
     let m = rgba.match(/rgba\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*),\s*[\d.]+\s*\)/);
     if (m) {
-      return `rgba(${m[1]}, ${alpha})`;
-    }
-    // 格式2: rgb(r, g, b)
-    m = rgba.match(/rgb\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*)\)/);
-    if (m) {
-      return `rgba(${m[1]}, ${alpha})`;
-    }
-    // 格式3: #rrggbb 或 #rgb
-    m = rgba.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})/);
-    if (m) {
-      const hex = m[1];
-      let r: number, g: number, b: number;
-      if (hex.length === 3) {
-        r = parseInt(hex[0] + hex[0], 16);
-        g = parseInt(hex[1] + hex[1], 16);
-        b = parseInt(hex[2] + hex[2], 16);
+      out = `rgba(${m[1]}, ${alpha})`;
+    } else {
+      m = rgba.match(/rgb\((\s*\d+\s*,\s*\d+\s*,\s*\d+\s*)\)/);
+      if (m) {
+        out = `rgba(${m[1]}, ${alpha})`;
       } else {
-        r = parseInt(hex.substring(0, 2), 16);
-        g = parseInt(hex.substring(2, 4), 16);
-        b = parseInt(hex.substring(4, 6), 16);
+        m = rgba.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})/);
+        if (m) {
+          const hex = m[1];
+          let r: number, g: number, b: number;
+          if (hex.length === 3) {
+            r = parseInt(hex[0] + hex[0], 16);
+            g = parseInt(hex[1] + hex[1], 16);
+            b = parseInt(hex[2] + hex[2], 16);
+          } else {
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+          }
+          out = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        } else {
+          console.warn('无法解析颜色格式:', rgba);
+          out = rgba;
+        }
       }
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
-    // 如果都不匹配，返回原色（添加默认透明度）
-    console.warn('无法解析颜色格式:', rgba);
-    return rgba;
+    withAlphaCache[key] = out;
+    return out;
   }
 
   const CATEGORY_ORDER = ['畅销爆品', '稳健产品', '潜力产品', '淘汰产品'];
