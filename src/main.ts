@@ -1302,208 +1302,117 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       return { data: [], midX: 0, midY: 0 };
     }
     
-    // 两阶段加载：阶段1 对「当前拉到的全部记录」算排序字段并排序，阶段2 只对最终前 N 条补全标题/主图等
-    // 阶段1：只读取排序必需的字段（需求趋势得分、竞争强度得分、利润空间得分/综合得分）
-    // 阶段2：排序后，只对最终显示的数据读取其他字段（标题、ASIN、分类、商品主图）
-    // 🔥 VERSION: 20260219-4 - 强制生成新 hash
-    console.log('🚀 [NEW v4] View loadViewData 两阶段加载策略启动 - 20260219-4');
-    
-    // 阶段1：根据配置读取必需字段（需求趋势得分、竞争强度得分、气泡大小字段、排序字段）
-    // 优化：只读取实际需要的字段，避免重复读取
-    console.log('📋 阶段1：根据配置读取必需字段...', {
-      sizeFieldName,
-      sortFieldName,
-      filterLimit
-    });
-    
-    // 确定需要读取的字段ID
-    const fieldsToRead: string[] = [
-      requiredFieldIds.demand!,      // 需求趋势得分（X轴，必需）
-      requiredFieldIds.competition!, // 竞争强度得分（Y轴，必需）
-      requiredFieldIds.size!         // 气泡大小字段（必需）
-    ];
-    
-    // 如果排序字段和气泡大小字段不同，也需要读取排序字段
+    // 单阶段：每页 200 条一次性读取全部字段（排序+展示），排序后取前 N，无阶段2
     let sortFieldId: string | null = null;
     if (sortFieldName && sortFieldName !== sizeFieldName) {
-      if (sortFieldName === FIELD_NAMES.profit && requiredFieldIds.profit) {
-        sortFieldId = requiredFieldIds.profit;
-        fieldsToRead.push(requiredFieldIds.profit);
-      } else if (sortFieldName === FIELD_NAMES.comprehensive && requiredFieldIds.comprehensive) {
-        sortFieldId = requiredFieldIds.comprehensive;
-        fieldsToRead.push(requiredFieldIds.comprehensive);
-      }
+      if (sortFieldName === FIELD_NAMES.profit && requiredFieldIds.profit) sortFieldId = requiredFieldIds.profit;
+      else if (sortFieldName === FIELD_NAMES.comprehensive && requiredFieldIds.comprehensive) sortFieldId = requiredFieldIds.comprehensive;
     }
     
-    console.log('📋 阶段1需要读取的字段:', {
-      fieldsToRead: fieldsToRead.length,
-      includesSortField: !!sortFieldId,
-      sizeFieldId: requiredFieldIds.size,
-      sortFieldId: sortFieldId
-    });
+    console.log(`📋 一次性读取：对 ${allRecords.length} 条记录每页200条并发读全部字段（含标题/主图）...`);
     
-    const sortData: Array<{ record: any; x?: number; y?: number; size?: number; sortValue?: number }> = [];
-    let skippedCount = 0;
-    
-    console.log(`📋 阶段1：对 ${allRecords.length} 条记录，每次并发处理一整页（最多200条）...`);
-    
-    // 按页拆分（每页最多200条），逐页并发处理
+    const allData: any[] = [];
     const pageRecordSize = 200;
+    
     for (let pageIdx = 0; pageIdx < allRecords.length; pageIdx += pageRecordSize) {
       const pageRecords = allRecords.slice(pageIdx, pageIdx + pageRecordSize);
       const currentPage = Math.floor(pageIdx / pageRecordSize) + 1;
       const totalPages = Math.ceil(allRecords.length / pageRecordSize);
-      
       if (currentPage === 1 || currentPage === totalPages || currentPage % 2 === 0) {
         console.log(`📋 处理第 ${currentPage}/${totalPages} 页（${pageRecords.length} 条）...`);
       }
       
-      // 对当前页的所有记录并发处理（Promise.all）
       const pagePromises = pageRecords.map(async (record: any) => {
         try {
+          // 固定顺序：需求、竞争、大小、排序、标题、ASIN、分类、主图（无则 null 占位）
           const cellPromises: Promise<any>[] = [
             record.getCellByField(requiredFieldIds.demand!),
             record.getCellByField(requiredFieldIds.competition!),
-            record.getCellByField(requiredFieldIds.size!)
+            record.getCellByField(requiredFieldIds.size!),
+            sortFieldId ? record.getCellByField(sortFieldId) : Promise.resolve(null),
+            requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
+            requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
+            requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
+            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
           ];
-          
-          if (sortFieldId) {
-            cellPromises.push(record.getCellByField(sortFieldId));
-          }
-          
           const cells = await Promise.all(cellPromises);
           
-          const [x, y, size, sortValue] = await Promise.all([
+          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue] = await Promise.all([
             cells[0].getValue().then((v: any) => toNumber(v)),
             cells[1].getValue().then((v: any) => toNumber(v)),
             cells[2].getValue().then((v: any) => toNumber(v)),
-            sortFieldId ? cells[3].getValue().then((v: any) => toNumber(v)) : Promise.resolve(undefined)
+            cells[3] ? cells[3].getValue().then((v: any) => toNumber(v)) : Promise.resolve(undefined),
+            cells[4] ? cells[4].getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
+            cells[5] ? cells[5].getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
+            cells[6] ? cells[6].getValue().then((v: any) => toText(v)) : Promise.resolve(''),
+            cells[7] ? cells[7].getValue() : Promise.resolve(null)
           ]);
+          if (x === undefined || y === undefined || size === undefined) return null;
           
-          if (x !== undefined && y !== undefined && size !== undefined) {
-            return { record, x, y, size, sortValue };
-          } else {
-            return null;
+          const title = titleVal || '未知';
+          const asin = asinVal || 'N/A';
+          const category = categoryVal || '';
+          
+          let imageUrl = '';
+          if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
+          else {
+            const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
+            if (directUrl) imageUrl = directUrl;
+            else if (token && requiredFieldIds.image) {
+              try {
+                const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
+                imageUrl = urls?.[0] || '';
+              } catch (_) {}
+            }
           }
+          
+          return {
+            x, y, size,
+            sortValue,
+            profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
+            comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
+            title, asin, category,
+            image: imageUrl
+          };
         } catch (e: any) {
           return null;
         }
       });
       
       const pageResults = await Promise.all(pagePromises);
-      const validResults = pageResults.filter(r => r !== null);
-      skippedCount += pageResults.length - validResults.length;
-      sortData.push(...validResults);
+      allData.push(...pageResults.filter(r => r !== null));
     }
     
-    console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
-    
-    // 中轴线：优先使用指标基准表公式字段（基于全量结果）；否则用当前 sortData 中位数
     let midX: number;
     let midY: number;
     if (axisFromBenchmark) {
       midX = axisFromBenchmark.midX;
       midY = axisFromBenchmark.midY;
     } else {
-      const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
-      const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
+      const allXs = allData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
+      const allYs = allData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
       midX = median(allXs);
       midY = median(allYs);
-      console.log(`📊 中轴线（当前 ${sortData.length} 条计算）：midX=${midX.toFixed(2)}，midY=${midY.toFixed(2)}`);
+      console.log(`📊 中轴线（${allData.length} 条）：midX=${midX.toFixed(2)}，midY=${midY.toFixed(2)}`);
     }
     
-    // 先排序，取前N条
-    let dataToLoad = sortData;
+    let resultData = allData;
     if (sortFieldName && filterLimit && filterLimit !== 'all') {
       const filterLimitNum = typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit;
       if (!isNaN(filterLimitNum) && filterLimitNum > 0) {
-        console.log(`📋 按 ${sortFieldName} 排序，取前 ${filterLimitNum} 条...`);
-        // 快速排序：使用 sortValue（如果存在）或 size（气泡大小字段）
-        dataToLoad.sort((a: any, b: any) => {
-          const aValue = a.sortValue !== undefined ? a.sortValue : a.size ?? 0;
-          const bValue = b.sortValue !== undefined ? b.sortValue : b.size ?? 0;
-          return bValue - aValue; // 降序
-        });
-        dataToLoad = dataToLoad.slice(0, filterLimitNum);
-        console.log(`✅ 排序完成，保留前 ${dataToLoad.length} 条`);
+        resultData = [...allData].sort((a: any, b: any) => {
+          const aV = a.sortValue !== undefined ? a.sortValue : a.size ?? 0;
+          const bV = b.sortValue !== undefined ? b.sortValue : b.size ?? 0;
+          return bV - aV;
+        }).slice(0, filterLimitNum);
+        console.log(`✅ 排序取前 ${filterLimitNum} 条，共 ${resultData.length} 条`);
       }
     }
-    
-    // 阶段2：只对最终显示的数据读取其他字段（标题、ASIN、分类、商品主图），按页并发
-    console.log('📋 阶段2：读取其他字段（标题、ASIN、分类、商品主图）...');
-    const parsedData: any[] = [];
-    const phase2PageSize = 200; // 阶段2也按200一页并发
-    
-    for (let pageIdx = 0; pageIdx < dataToLoad.length; pageIdx += phase2PageSize) {
-      const pageItems = dataToLoad.slice(pageIdx, pageIdx + phase2PageSize);
-      const currentPage = Math.floor(pageIdx / phase2PageSize) + 1;
-      const totalPages = Math.ceil(dataToLoad.length / phase2PageSize);
-      
-      if (currentPage === 1 || currentPage === totalPages) {
-        console.log(`📋 阶段2 处理第 ${currentPage}/${totalPages} 页（${pageItems.length} 条）...`);
-      }
-      
-      const pagePromises = pageItems.map(async (item: any) => {
-        try {
-          const { record, x, y, size, sortValue } = item;
-          
-          // 并行读取其他字段
-          const [titleCell, asinCell, categoryCell, imageCell] = await Promise.all([
-            requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
-            requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
-            requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
-            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
-          ]);
-          
-          const [title, asin, category, imageValue] = await Promise.all([
-            titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
-            asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
-            categoryCell ? categoryCell.getValue().then((v: any) => toText(v)) : Promise.resolve(''),
-            imageCell ? imageCell.getValue() : Promise.resolve(null)
-          ]);
-          
-          let imageUrl = '';
-          if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-            imageUrl = imageValue;
-          } else {
-            const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
-            if (directUrl) {
-              imageUrl = directUrl;
-            } else if (token && requiredFieldIds.image) {
-              try {
-                const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
-                imageUrl = urls?.[0] || '';
-              } catch (e: any) {
-                console.warn(`⚠️ 获取附件URL失败 record=${record.id}:`, e?.message);
-              }
-            }
-          }
-          
-          return {
-            x, y, size,
-            profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
-            comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
-            title: title || '未知',
-            asin: asin || 'N/A',
-            category: category || '',
-            image: imageUrl
-          };
-        } catch (e: any) {
-          console.warn(`⚠️ 解析记录失败:`, e?.message);
-          return null;
-        }
-      });
-      
-      const pageResults = await Promise.all(pagePromises);
-      parsedData.push(...pageResults.filter(r => r !== null));
-    }
-    
-    console.log(`✅ 阶段2完成: ${parsedData.length} 条有效数据`);
     
     const elapsed = Date.now() - startTime;
-    console.log(`✅ 预览数据加载完成: ${parsedData.length} 条有效数据，耗时 ${(elapsed / 1000).toFixed(1)}s`);
+    console.log(`✅ 预览数据加载完成: ${resultData.length} 条，耗时 ${(elapsed / 1000).toFixed(1)}s`);
     
-    return { data: parsedData, midX, midY };
+    return { data: resultData, midX, midY };
   } catch (error: any) {
     console.error('预览数据加载失败:', error);
     throw error;
@@ -1647,50 +1556,22 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     // 性能优化：两阶段加载策略（与 loadPreviewData 相同）
     console.log('🚀 [NEW] View loadViewData 两阶段加载策略启动');
     
-    // 阶段1：根据配置读取必需字段（需求趋势得分、竞争强度得分、气泡大小字段、排序字段）
-    console.log('📋 阶段1：根据配置读取必需字段...', {
-      sizeFieldName,
-      sortFieldName,
-      filterLimit
-    });
-    
-    // 确定需要读取的字段ID
-    const fieldsToRead: string[] = [
-      requiredFieldIds.demand!,      // 需求趋势得分（X轴，必需）
-      requiredFieldIds.competition!, // 竞争强度得分（Y轴，必需）
-      requiredFieldIds.size!         // 气泡大小字段（必需）
-    ];
-    
-    // 如果排序字段和气泡大小字段不同，也需要读取排序字段
+    // 单阶段：每页 200 条一次性读取全部字段（排序+展示），排序后取前 N，无阶段2
     let sortFieldId: string | null = null;
     if (sortFieldName && sortFieldName !== sizeFieldName) {
-      if (sortFieldName === FIELD_NAMES.profit && requiredFieldIds.profit) {
-        sortFieldId = requiredFieldIds.profit;
-        fieldsToRead.push(requiredFieldIds.profit);
-      } else if (sortFieldName === FIELD_NAMES.comprehensive && requiredFieldIds.comprehensive) {
-        sortFieldId = requiredFieldIds.comprehensive;
-        fieldsToRead.push(requiredFieldIds.comprehensive);
-      }
+      if (sortFieldName === FIELD_NAMES.profit && requiredFieldIds.profit) sortFieldId = requiredFieldIds.profit;
+      else if (sortFieldName === FIELD_NAMES.comprehensive && requiredFieldIds.comprehensive) sortFieldId = requiredFieldIds.comprehensive;
     }
     
-    console.log('📋 阶段1需要读取的字段:', {
-      fieldsToRead: fieldsToRead.length,
-      includesSortField: !!sortFieldId,
-      sizeFieldId: requiredFieldIds.size,
-      sortFieldId: sortFieldId
-    });
+    console.log(`📋 一次性读取：对 ${recordsToProcess.length} 条记录每页200条并发读全部字段（含标题/主图）...`);
     
-    const sortData: Array<{ record: any; x?: number; y?: number; size?: number; sortValue?: number }> = [];
-    let skippedCount = 0;
-    
-    console.log(`📋 阶段1：对 ${recordsToProcess.length} 条记录，每次并发处理一整页（最多200条）...`);
-    
+    const allData: any[] = [];
     const pageRecordSize = 200;
+    
     for (let pageIdx = 0; pageIdx < recordsToProcess.length; pageIdx += pageRecordSize) {
       const pageRecords = recordsToProcess.slice(pageIdx, pageIdx + pageRecordSize);
       const currentPage = Math.floor(pageIdx / pageRecordSize) + 1;
       const totalPages = Math.ceil(recordsToProcess.length / pageRecordSize);
-      
       if (currentPage === 1 || currentPage === totalPages || currentPage % 2 === 0) {
         console.log(`📋 处理第 ${currentPage}/${totalPages} 页（${pageRecords.length} 条）...`);
       }
@@ -1700,134 +1581,86 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
           const cellPromises: Promise<any>[] = [
             record.getCellByField(requiredFieldIds.demand!),
             record.getCellByField(requiredFieldIds.competition!),
-            record.getCellByField(requiredFieldIds.size!)
-          ];
-          if (sortFieldId) cellPromises.push(record.getCellByField(sortFieldId));
-          
-          const cells = await Promise.all(cellPromises);
-          const [x, y, size, sortValue] = await Promise.all([
-            cells[0].getValue().then((v: any) => toNumber(v)),
-            cells[1].getValue().then((v: any) => toNumber(v)),
-            cells[2].getValue().then((v: any) => toNumber(v)),
-            sortFieldId ? cells[3].getValue().then((v: any) => toNumber(v)) : Promise.resolve(undefined)
-          ]);
-          
-          if (x !== undefined && y !== undefined && size !== undefined) {
-            return { record, x, y, size, sortValue };
-          }
-          return null;
-        } catch (e: any) {
-          return null;
-        }
-      });
-      
-      const pageResults = await Promise.all(pagePromises);
-      const validResults = pageResults.filter(r => r !== null);
-      skippedCount += pageResults.length - validResults.length;
-      sortData.push(...validResults);
-    }
-    
-    console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
-    
-    // 中轴线：优先使用指标基准表公式字段（基于全量结果）；否则用当前 sortData 中位数
-    let midX: number;
-    let midY: number;
-    if (axisFromBenchmark) {
-      midX = axisFromBenchmark.midX;
-      midY = axisFromBenchmark.midY;
-    } else {
-      const allXs = sortData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
-      const allYs = sortData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
-      midX = median(allXs);
-      midY = median(allYs);
-      console.log(`📊 中轴线（当前 ${sortData.length} 条计算）：midX=${midX.toFixed(2)}，midY=${midY.toFixed(2)}`);
-    }
-    
-    // 先排序，取前N条
-    let dataToLoad = sortData;
-    if (sortFieldName && filterLimit && filterLimit !== 'all') {
-      const filterLimitNum = typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit;
-      if (!isNaN(filterLimitNum) && filterLimitNum > 0) {
-        console.log(`📋 按 ${sortFieldName} 排序，取前 ${filterLimitNum} 条...`);
-        // 快速排序：使用 sortValue（如果存在）或 size（气泡大小字段）
-        dataToLoad.sort((a: any, b: any) => {
-          const aValue = a.sortValue !== undefined ? a.sortValue : a.size ?? 0;
-          const bValue = b.sortValue !== undefined ? b.sortValue : b.size ?? 0;
-          return bValue - aValue; // 降序
-        });
-        dataToLoad = dataToLoad.slice(0, filterLimitNum);
-        console.log(`✅ 排序完成，保留前 ${dataToLoad.length} 条`);
-      }
-    }
-    
-    // 阶段2：只对最终显示的数据读取其他字段，按页200条并发
-    console.log('📋 阶段2：读取其他字段（标题、ASIN、分类、商品主图）...');
-    const parsedData: any[] = [];
-    const phase2PageSize = 200;
-    
-    for (let pageIdx = 0; pageIdx < dataToLoad.length; pageIdx += phase2PageSize) {
-      const pageItems = dataToLoad.slice(pageIdx, pageIdx + phase2PageSize);
-      const currentPage = Math.floor(pageIdx / phase2PageSize) + 1;
-      const totalPages = Math.ceil(dataToLoad.length / phase2PageSize);
-      
-      if (currentPage === 1 || currentPage === totalPages) {
-        console.log(`📋 阶段2 处理第 ${currentPage}/${totalPages} 页（${pageItems.length} 条）...`);
-      }
-      
-      const pagePromises = pageItems.map(async (item: any) => {
-        try {
-          const { record, x, y, size, sortValue } = item;
-          const [titleCell, asinCell, categoryCell, imageCell] = await Promise.all([
+            record.getCellByField(requiredFieldIds.size!),
+            sortFieldId ? record.getCellByField(sortFieldId) : Promise.resolve(null),
             requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
             requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
             requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
             requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
+          ];
+          const cells = await Promise.all(cellPromises);
+          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue] = await Promise.all([
+            cells[0].getValue().then((v: any) => toNumber(v)),
+            cells[1].getValue().then((v: any) => toNumber(v)),
+            cells[2].getValue().then((v: any) => toNumber(v)),
+            cells[3] ? cells[3].getValue().then((v: any) => toNumber(v)) : Promise.resolve(undefined),
+            cells[4] ? cells[4].getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
+            cells[5] ? cells[5].getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
+            cells[6] ? cells[6].getValue().then((v: any) => toText(v)) : Promise.resolve(''),
+            cells[7] ? cells[7].getValue() : Promise.resolve(null)
           ]);
-          const [title, asin, category, imageValue] = await Promise.all([
-            titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
-            asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
-            categoryCell ? categoryCell.getValue().then((v: any) => toText(v)) : Promise.resolve(''),
-            imageCell ? imageCell.getValue() : Promise.resolve(null)
-          ]);
+          if (x === undefined || y === undefined || size === undefined) return null;
+          
+          const title = titleVal || '未知';
+          const asin = asinVal || 'N/A';
+          const category = categoryVal || '';
           let imageUrl = '';
-          if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-            imageUrl = imageValue;
-          } else {
+          if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
+          else {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
             if (directUrl) imageUrl = directUrl;
             else if (token && requiredFieldIds.image) {
               try {
                 const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
                 imageUrl = urls?.[0] || '';
-              } catch (e: any) {
-                console.warn(`⚠️ 获取附件URL失败 record=${record.id}:`, e?.message);
-              }
+              } catch (_) {}
             }
           }
           return {
             x, y, size,
+            sortValue,
             profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
             comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
-            title: title || '未知',
-            asin: asin || 'N/A',
-            category: category || '',
-            image: imageUrl
+            title, asin, category, image: imageUrl
           };
         } catch (e: any) {
-          console.warn(`⚠️ 解析记录失败:`, e?.message);
           return null;
         }
       });
       const pageResults = await Promise.all(pagePromises);
-      parsedData.push(...pageResults.filter(r => r !== null));
+      allData.push(...pageResults.filter(r => r !== null));
     }
     
-    console.log(`✅ 阶段2完成: ${parsedData.length} 条有效数据`);
+    let midX: number;
+    let midY: number;
+    if (axisFromBenchmark) {
+      midX = axisFromBenchmark.midX;
+      midY = axisFromBenchmark.midY;
+    } else {
+      const allXs = allData.map((r: any) => r.x).filter((v: number) => typeof v === 'number' && isFinite(v));
+      const allYs = allData.map((r: any) => r.y).filter((v: number) => typeof v === 'number' && isFinite(v));
+      midX = median(allXs);
+      midY = median(allYs);
+      console.log(`📊 中轴线（${allData.length} 条）：midX=${midX.toFixed(2)}，midY=${midY.toFixed(2)}`);
+    }
+    
+    let resultData = allData;
+    if (sortFieldName && filterLimit && filterLimit !== 'all') {
+      const filterLimitNum = typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit;
+      if (!isNaN(filterLimitNum) && filterLimitNum > 0) {
+        resultData = [...allData].sort((a: any, b: any) => {
+          const aV = a.sortValue !== undefined ? a.sortValue : a.size ?? 0;
+          const bV = b.sortValue !== undefined ? b.sortValue : b.size ?? 0;
+          return bV - aV;
+        }).slice(0, filterLimitNum);
+        console.log(`✅ 排序取前 ${filterLimitNum} 条，共 ${resultData.length} 条`);
+      }
+    }
     
     const elapsed = Date.now() - startTime;
-    console.log(`✅ 数据加载完成: ${parsedData.length} 条有效数据，耗时 ${(elapsed / 1000).toFixed(1)}s`);
+    console.log(`✅ 数据加载完成: ${resultData.length} 条，耗时 ${(elapsed / 1000).toFixed(1)}s`);
     
-    return { data: parsedData, midX, midY };
+    return { data: resultData, midX, midY };
   } catch (error: any) {
     console.error('数据加载失败:', error);
     throw error;
