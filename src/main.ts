@@ -439,8 +439,8 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
             <div style="width: 100px; height: 100px; flex-shrink: 0; border-radius: 6px; border: 1px solid #dfe1e6; overflow: hidden; background: #f4f5f7; display: flex; align-items: center; justify-content: center;">
               ${imageUrl
                 ? `<img src="${imageUrl}" alt="商品主图" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='block');">
-              <span style="display:none;color:#97a0af;font-size:11px;">暂无主图</span>`
-                : '<span style="color: #97a0af; font-size: 11px;">暂无主图</span>'}
+              <span style="display:none;color:#97a0af;font-size:10px;text-align:center;padding:4px;">暂无主图<br/><span style="font-size:9px;">(点击气泡刷新)</span></span>`
+                : '<span style="color: #97a0af; font-size: 10px; text-align: center; padding: 4px;">暂无主图<br/><span style="font-size: 9px;">(点击气泡刷新)</span></span>'}
             </div>
             <div style="flex: 1; min-width: 0;"><div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div></div>
           </div>
@@ -620,6 +620,123 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   };
 
   myChart.setOption(option as any);
+  
+  // 监听气泡点击事件：刷新所有主图
+  myChart.off('click');  // 先移除旧监听器，避免重复绑定
+  myChart.on('click', (params: any) => {
+    if (params.componentType === 'series') {
+      // 异步刷新主图，不阻塞事件处理
+      (async () => {
+        console.log('🔄 用户点击气泡，开始刷新所有主图 URL...');
+        
+        if (!myChart) return;
+        
+        // 显示加载提示
+        myChart.showLoading({
+          text: '正在刷新主图...',
+          color: '#0052cc',
+          textColor: '#172b4d',
+          maskColor: 'rgba(255, 255, 255, 0.85)',
+          zlevel: 0
+        });
+        
+        try {
+          // 获取当前表和主图字段
+          const base = await (window as any).bitable?.base;
+          if (!base) {
+            console.warn('无法获取 bitable.base，跳过主图刷新');
+            if (myChart) myChart.hideLoading();
+            return;
+          }
+          
+          // 从 data 里拿到第一条的 recordId，推断出 tableId
+          if (!data || data.length === 0) {
+            console.warn('数据为空，无法刷新');
+            if (myChart) myChart.hideLoading();
+            return;
+          }
+          
+          // 通过 dashboard.getConfig 获取 tableId
+          const config: any = await (window as any).dashboard?.getConfig?.();
+          const tableId = config?.dataConditions?.[0]?.tableId || config?.customConfig?.tableId;
+          if (!tableId) {
+            console.warn('无法获取 tableId，跳过主图刷新');
+            if (myChart) myChart.hideLoading();
+            return;
+          }
+          
+          const table = await base.getTableById(tableId);
+          const fieldList = await table.getFieldList();
+          
+          let imageFieldId: string | null = null;
+          for (const field of fieldList) {
+            const name = await field.getName();
+            if (name === '商品主图') {
+              imageFieldId = field.id;
+              break;
+            }
+          }
+          
+          if (!imageFieldId) {
+            console.warn('未找到「商品主图」字段');
+            if (myChart) myChart.hideLoading();
+            return;
+          }
+          
+          // 批量刷新所有主图 URL（每50条并发一组）
+          const batchSize = 50;
+          let refreshCount = 0;
+          
+          for (let i = 0; i < data.length; i += batchSize) {
+            const batch = data.slice(i, i + batchSize);
+            
+            await Promise.all(batch.map(async (item: any) => {
+              if (!item.recordId) return;
+              
+              try {
+                const record = await table.getRecordById(item.recordId);
+                const cell = await record.getCellByField(imageFieldId!);
+                const imageValue = await cell.getValue();
+                
+                let newImageUrl = '';
+                if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+                  newImageUrl = imageValue;
+                } else {
+                  const parsed = parseFirstAttachmentUrlOrToken(imageValue);
+                  if (parsed.url) {
+                    newImageUrl = parsed.url;
+                  } else if (parsed.token) {
+                    try {
+                      const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
+                      newImageUrl = urls?.[0] || '';
+                    } catch (_) {}
+                  }
+                }
+                
+                if (newImageUrl) {
+                  item.image = newImageUrl;
+                  refreshCount++;
+                }
+              } catch (err) {
+                console.warn(`刷新 recordId=${item.recordId} 主图失败:`, err);
+              }
+            }));
+          }
+          
+          console.log(`✅ 已刷新 ${refreshCount}/${data.length} 个气泡的主图`);
+          if (myChart) myChart.hideLoading();
+          
+          // 重新渲染图表（使用更新后的 data）
+          renderChart(data, sizeFieldLabel, lastAxis);
+          
+        } catch (error: any) {
+          console.error('刷新主图失败:', error);
+          if (myChart) myChart.hideLoading();
+          alert(`刷新主图失败: ${error?.message || error}`);
+        }
+      })();
+    }
+  });
   
   // 添加坐标轴箭头（使用 graphic 组件，在图表渲染后动态计算位置）
   setTimeout(() => {
@@ -1383,7 +1500,8 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
             comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
             title, asin, category,
-            image: imageUrl
+            image: imageUrl,
+            recordId: record.id  // 保存 recordId 用于后续刷新主图
           };
         } catch (e: any) {
           return null;
@@ -1564,10 +1682,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
       // 所以保持原逻辑：先获取所有需要的字段，然后排序筛选
     }
     
-    // 性能优化：两阶段加载策略（与 loadPreviewData 相同）
-    console.log('🚀 [NEW] View loadViewData 两阶段加载策略启动');
-    
-    // 单阶段：每页 200 条一次性读取全部字段（排序+展示），排序后取前 N，无阶段2
+    // 单阶段：每页 200 条一次性读取全部字段（排序+展示），排序后取前 N
     let sortFieldId: string | null = null;
     if (sortFieldName && sortFieldName !== sizeFieldName) {
       if (sortFieldName === FIELD_NAMES.profit && requiredFieldIds.profit) sortFieldId = requiredFieldIds.profit;
@@ -1632,7 +1747,8 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             sortValue,
             profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
             comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
-            title, asin, category, image: imageUrl
+            title, asin, category, image: imageUrl,
+            recordId: record.id  // 保存 recordId 用于后续刷新主图
           };
         } catch (e: any) {
           return null;
