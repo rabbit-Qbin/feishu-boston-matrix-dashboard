@@ -1250,8 +1250,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     const limitNum = needLimit ? (typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit) : undefined;
     const targetRecordCount = limitNum && !isNaN(limitNum) && limitNum > 0 ? limitNum : undefined;
     
-    // 必须拉取足够多的记录再排序，否则「前100」只是「前100 of 前200」而非全表前100
-    // 例如表共 500 条：至少拉 500 条，排序后取前 N；上限 2000 避免超大表超时
+    // 必须拉足够多记录用于排序（500条以上），否则「前20」可能不准（真top20在后面）
     const fetchRecordCount = targetRecordCount ? Math.min(2000, Math.max(500, targetRecordCount * 2)) : undefined;
     
     console.log('📋 开始获取记录列表...', {
@@ -1265,14 +1264,16 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     const allRecords: any[] = [];
     let pageToken: number | undefined = undefined;
     let pageCount = 0;
-    const pageSize = 200; // 每页最多200条
+    const pageSize = 200;
     
     do {
       pageCount++;
       const remainingNeeded = fetchRecordCount ? fetchRecordCount - allRecords.length : undefined;
       const currentPageSize = remainingNeeded && remainingNeeded > 0 ? Math.min(pageSize, remainingNeeded) : pageSize;
       
-      console.log(`📋 获取第 ${pageCount} 页数据 (pageSize: ${currentPageSize}, pageToken: ${pageToken || '无'})`);
+      if (pageCount <= 2 || pageCount % 5 === 0) {
+        console.log(`📋 获取第 ${pageCount} 页 (已累计 ${allRecords.length} 条)`);
+      }
       
       const recordListResult: any = await table.getRecordListByPage({ 
         pageSize: currentPageSize,
@@ -1342,89 +1343,57 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
     });
     
     const sortData: Array<{ record: any; x?: number; y?: number; size?: number; sortValue?: number }> = [];
-    const batchSize = 50; // 增大批量大小，配合并发处理
-    const concurrentBatches = 5; // 同时处理5个批次，提升并发度
     let skippedCount = 0;
     
-    // 创建所有批次
-    const batches: Array<{ batch: any[]; batchNum: number }> = [];
-    for (let i = 0; i < allRecords.length; i += batchSize) {
-      batches.push({
-        batch: allRecords.slice(i, i + batchSize),
-        batchNum: Math.floor(i / batchSize) + 1
-      });
-    }
-    const totalBatches = batches.length;
+    console.log(`📋 阶段1：对 ${allRecords.length} 条记录，每次并发处理一整页（最多200条）...`);
     
-    console.log(`📋 共 ${totalBatches} 个批次，每批 ${batchSize} 条，并发处理 ${concurrentBatches} 个批次`);
-    
-    // 并发处理批次：使用并发控制，同时处理多个批次
-    for (let i = 0; i < batches.length; i += concurrentBatches) {
-      const concurrentBatchGroup = batches.slice(i, i + concurrentBatches);
-      const batchGroupNum = Math.floor(i / concurrentBatches) + 1;
-      const totalGroups = Math.ceil(batches.length / concurrentBatches);
+    // 按页拆分（每页最多200条），逐页并发处理
+    const pageRecordSize = 200;
+    for (let pageIdx = 0; pageIdx < allRecords.length; pageIdx += pageRecordSize) {
+      const pageRecords = allRecords.slice(pageIdx, pageIdx + pageRecordSize);
+      const currentPage = Math.floor(pageIdx / pageRecordSize) + 1;
+      const totalPages = Math.ceil(allRecords.length / pageRecordSize);
       
-      // 只在开始和结束时输出日志
-      if (batchGroupNum === 1 || batchGroupNum === totalGroups) {
-        console.log(`📋 并发处理批次组 ${batchGroupNum}/${totalGroups}（${concurrentBatchGroup.length} 个批次）...`);
+      if (currentPage === 1 || currentPage === totalPages || currentPage % 2 === 0) {
+        console.log(`📋 处理第 ${currentPage}/${totalPages} 页（${pageRecords.length} 条）...`);
       }
       
-      // 并发处理当前批次组
-      const batchGroupPromises = concurrentBatchGroup.map(async ({ batch, batchNum }) => {
-        // 批次内：并行处理所有记录
-        const recordPromises = batch.map(async (record: any) => {
+      // 对当前页的所有记录并发处理（Promise.all）
+      const pagePromises = pageRecords.map(async (record: any) => {
         try {
-            // 根据配置动态读取字段（并行获取所有字段的Cell）
-            const cellPromises: Promise<any>[] = [
-              record.getCellByField(requiredFieldIds.demand!),
-              record.getCellByField(requiredFieldIds.competition!),
-              record.getCellByField(requiredFieldIds.size!)
-            ];
-            
-            // 如果需要排序字段且与气泡大小字段不同，也读取排序字段
-            if (sortFieldId) {
-              cellPromises.push(record.getCellByField(sortFieldId));
-            }
-            
-            const cells = await Promise.all(cellPromises);
-            
-            // 并行获取所有字段的值
-          const [
-              x,
-              y,
-              size,
-              sortValue
-            ] = await Promise.all([
-              cells[0].getValue().then((v: any) => toNumber(v)),
-              cells[1].getValue().then((v: any) => toNumber(v)),
-              cells[2].getValue().then((v: any) => toNumber(v)),
-              sortFieldId ? cells[3].getValue().then((v: any) => toNumber(v)) : Promise.resolve(undefined)
-            ]);
-            
-            if (x !== undefined && y !== undefined && size !== undefined) {
-              return { record, x, y, size, sortValue };
-            } else {
-              return null;
-            }
-          } catch (e: any) {
+          const cellPromises: Promise<any>[] = [
+            record.getCellByField(requiredFieldIds.demand!),
+            record.getCellByField(requiredFieldIds.competition!),
+            record.getCellByField(requiredFieldIds.size!)
+          ];
+          
+          if (sortFieldId) {
+            cellPromises.push(record.getCellByField(sortFieldId));
+          }
+          
+          const cells = await Promise.all(cellPromises);
+          
+          const [x, y, size, sortValue] = await Promise.all([
+            cells[0].getValue().then((v: any) => toNumber(v)),
+            cells[1].getValue().then((v: any) => toNumber(v)),
+            cells[2].getValue().then((v: any) => toNumber(v)),
+            sortFieldId ? cells[3].getValue().then((v: any) => toNumber(v)) : Promise.resolve(undefined)
+          ]);
+          
+          if (x !== undefined && y !== undefined && size !== undefined) {
+            return { record, x, y, size, sortValue };
+          } else {
             return null;
           }
-        });
-        
-        // 等待批次内所有记录处理完成
-        const batchResults = await Promise.all(recordPromises);
-        const validResults = batchResults.filter(r => r !== null);
-        skippedCount += batchResults.length - validResults.length;
-        
-        return validResults;
+        } catch (e: any) {
+          return null;
+        }
       });
       
-      // 等待当前批次组的所有批次完成
-      const batchGroupResults = await Promise.all(batchGroupPromises);
-      // 合并结果
-      for (const results of batchGroupResults) {
-        sortData.push(...results);
-      }
+      const pageResults = await Promise.all(pagePromises);
+      const validResults = pageResults.filter(r => r !== null);
+      skippedCount += pageResults.length - validResults.length;
+      sortData.push(...validResults);
     }
     
     console.log(`✅ 阶段1完成: ${sortData.length} 条有效数据，跳过 ${skippedCount} 条无效记录`);
@@ -1460,112 +1429,73 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       }
     }
     
-    // 阶段2：只对最终显示的数据读取其他字段（并发处理）
+    // 阶段2：只对最终显示的数据读取其他字段（标题、ASIN、分类、商品主图），按页并发
     console.log('📋 阶段2：读取其他字段（标题、ASIN、分类、商品主图）...');
     const parsedData: any[] = [];
-    const finalBatchSize = 25; // 批量大小，避免单批过多导致超时
-    const concurrentBatchesPhase2 = 3; // 降低并发，减少 API 限流
+    const phase2PageSize = 200; // 阶段2也按200一页并发
     
-    // 创建所有批次
-    const finalBatches: Array<{ batch: any[]; batchNum: number }> = [];
-    for (let i = 0; i < dataToLoad.length; i += finalBatchSize) {
-      finalBatches.push({
-        batch: dataToLoad.slice(i, i + finalBatchSize),
-        batchNum: Math.floor(i / finalBatchSize) + 1
-      });
-    }
-    const totalFinalBatches = finalBatches.length;
-    
-    // 并发处理批次
-    for (let i = 0; i < finalBatches.length; i += concurrentBatchesPhase2) {
-      const concurrentBatchGroup = finalBatches.slice(i, i + concurrentBatchesPhase2);
-      const batchGroupNum = Math.floor(i / concurrentBatchesPhase2) + 1;
-      const totalGroups = Math.ceil(finalBatches.length / concurrentBatchesPhase2);
+    for (let pageIdx = 0; pageIdx < dataToLoad.length; pageIdx += phase2PageSize) {
+      const pageItems = dataToLoad.slice(pageIdx, pageIdx + phase2PageSize);
+      const currentPage = Math.floor(pageIdx / phase2PageSize) + 1;
+      const totalPages = Math.ceil(dataToLoad.length / phase2PageSize);
       
-      // 只在开始和结束时输出日志
-      if (batchGroupNum === 1 || batchGroupNum === totalGroups) {
-        console.log(`📋 并发处理批次组 ${batchGroupNum}/${totalGroups}（${concurrentBatchGroup.length} 个批次）...`);
+      if (currentPage === 1 || currentPage === totalPages) {
+        console.log(`📋 阶段2 处理第 ${currentPage}/${totalPages} 页（${pageItems.length} 条）...`);
       }
       
-      // 并发处理当前批次组
-      const batchGroupPromises = concurrentBatchGroup.map(async ({ batch, batchNum }) => {
-        // 批次内：并行处理所有记录
-        const recordPromises = batch.map(async (item: any) => {
-          try {
-            const { record, x, y, size, sortValue } = item;
-            
-            // 并行读取其他字段（标题、ASIN、分类、商品主图）
-            const [
-            titleCell,
-            asinCell,
-              categoryCell,
-              imageCell
-          ] = await Promise.all([
+      const pagePromises = pageItems.map(async (item: any) => {
+        try {
+          const { record, x, y, size, sortValue } = item;
+          
+          // 并行读取其他字段
+          const [titleCell, asinCell, categoryCell, imageCell] = await Promise.all([
             requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
             requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
-              requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
-              requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
+            requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
+            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
           ]);
           
-          // 并行获取所有字段的值
-          const [
-            title,
-            asin,
-              category,
-              imageValue
-          ] = await Promise.all([
+          const [title, asin, category, imageValue] = await Promise.all([
             titleCell ? titleCell.getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
             asinCell ? asinCell.getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
-              categoryCell ? categoryCell.getValue().then((v: any) => toText(v)) : Promise.resolve(''),
-              imageCell ? imageCell.getValue() : Promise.resolve(null)
-            ]);
-            
-            // 处理商品主图：选品结果表内「查找引用的商品主图」拉取一次，一直显示。兼容：直接数组、关联/查找引用 { type, value: [...] }
-            let imageUrl = '';
-            if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-              imageUrl = imageValue;
-            } else {
-              const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
-              if (directUrl) {
-                imageUrl = directUrl;
-              } else if (token && requiredFieldIds.image) {
-                try {
-                  const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
-                  imageUrl = urls?.[0] || '';
-                } catch (e: any) {
-                  console.warn(`⚠️ 获取附件URL失败 record=${record.id}:`, e?.message);
-                }
+            categoryCell ? categoryCell.getValue().then((v: any) => toText(v)) : Promise.resolve(''),
+            imageCell ? imageCell.getValue() : Promise.resolve(null)
+          ]);
+          
+          let imageUrl = '';
+          if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+            imageUrl = imageValue;
+          } else {
+            const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
+            if (directUrl) {
+              imageUrl = directUrl;
+            } else if (token && requiredFieldIds.image) {
+              try {
+                const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
+                imageUrl = urls?.[0] || '';
+              } catch (e: any) {
+                console.warn(`⚠️ 获取附件URL失败 record=${record.id}:`, e?.message);
               }
             }
-            
-            return {
-              x,
-              y,
-              size,
-              profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
-              comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
-              title: title || '未知',
-              asin: asin || 'N/A',
-              category: category || '',
-              image: imageUrl
-            };
+          }
+          
+          return {
+            x, y, size,
+            profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
+            comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
+            title: title || '未知',
+            asin: asin || 'N/A',
+            category: category || '',
+            image: imageUrl
+          };
         } catch (e: any) {
           console.warn(`⚠️ 解析记录失败:`, e?.message);
           return null;
         }
       });
       
-        // 等待批次内所有记录处理完成
-        const batchResults = await Promise.all(recordPromises);
-        return batchResults.filter(r => r !== null);
-      });
-      
-      // 等待当前批次组的所有批次完成
-      const batchGroupResults = await Promise.all(batchGroupPromises);
-      // 合并结果
-      for (const results of batchGroupResults) {
-        parsedData.push(...results);
-      }
+      const pageResults = await Promise.all(pagePromises);
+      parsedData.push(...pageResults.filter(r => r !== null));
     }
     
     console.log(`✅ 阶段2完成: ${parsedData.length} 条有效数据`);
@@ -1653,8 +1583,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     const limitNum = needLimit ? (typeof filterLimit === 'string' ? parseInt(filterLimit) : filterLimit) : undefined;
     const targetRecordCount = limitNum && !isNaN(limitNum) && limitNum > 0 ? limitNum : undefined;
     
-    // 必须拉取足够多的记录再排序，否则「前100」只是「前100 of 前200」而非全表前100
-    // 例如表共 500 条：至少拉 500 条，排序后取前 N；上限 2000 避免超大表超时
+    // 必须拉足够多记录用于排序（500+），避免「前N」不准
     const fetchRecordCount = targetRecordCount ? Math.min(2000, Math.max(500, targetRecordCount * 2)) : undefined;
     
     console.log('📋 开始获取记录列表...', {
@@ -1668,14 +1597,16 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     const allRecords: any[] = [];
     let pageToken: number | undefined = undefined;
     let pageCount = 0;
-    const pageSize = 200; // 每页最多200条
+    const pageSize = 200;
     
     do {
       pageCount++;
       const remainingNeeded = fetchRecordCount ? fetchRecordCount - allRecords.length : undefined;
       const currentPageSize = remainingNeeded && remainingNeeded > 0 ? Math.min(pageSize, remainingNeeded) : pageSize;
       
-      console.log(`📋 获取第 ${pageCount} 页数据 (pageSize: ${currentPageSize})`);
+      if (pageCount <= 2 || pageCount % 5 === 0) {
+        console.log(`📋 获取第 ${pageCount} 页 (已累计 ${allRecords.length} 条)`);
+      }
       
       const recordListResult: any = await table.getRecordListByPage({ 
         pageSize: currentPageSize,
@@ -1750,8 +1681,8 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     });
     
     const sortData: Array<{ record: any; x?: number; y?: number; size?: number; sortValue?: number }> = [];
-    const batchSize = 50; // 增大批量大小，配合并发处理
-    const concurrentBatches = 5; // 同时处理5个批次，提升并发度
+    const batchSize = 60;
+    const concurrentBatches = 8; // 同时处理 8 个批次
     let skippedCount = 0;
     
     // 创建所有批次
@@ -1871,8 +1802,8 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
     // 阶段2：只对最终显示的数据读取其他字段（并发处理）
     console.log('📋 阶段2：读取其他字段（标题、ASIN、分类、商品主图）...');
     const parsedData: any[] = [];
-    const finalBatchSize = 25; // 批量大小，避免单批过多导致超时
-    const concurrentBatchesPhase2 = 3; // 降低并发，减少 API 限流
+    const finalBatchSize = 30;
+    const concurrentBatchesPhase2 = 6; // 提高并发，加快补全字段
     
     // 创建所有批次
     const finalBatches: Array<{ batch: any[]; batchNum: number }> = [];
@@ -2037,11 +1968,6 @@ async function init() {
                 <input type="radio" name="filterLimit" value="20"> 前20
               </label>
             </div>
-            <div class="field-group" style="margin-bottom: 20px; font-size: 13px; color: #5e6c84;">
-              <div style="font-weight: 600; margin-bottom: 8px; color: #172b4d;">中轴线（指标基准表）</div>
-              <div style="font-size: 12px; color: #6b778c; margin-bottom: 6px;">填写指标基准表 ID 时，中轴线使用该表中的 median_需求趋势得分、median_竞争强度得分（基于全量结果）；不填则按当前数据计算。</div>
-              <input type="text" id="benchmark-table-id" placeholder="例如 tblBbKcT94Gr9SLY" style="width: 100%; padding: 8px 10px; border: 1px solid #dfe1e6; border-radius: 4px; font-size: 13px; box-sizing: border-box;">
-            </div>
             <button id="save-btn" style="margin-top: auto; width: 100%; padding: 10px 24px; font-size: 14px; font-weight: 600; background: #0052cc; color: white; border: none; border-radius: 4px; cursor: pointer;">
               确定
             </button>
@@ -2062,20 +1988,6 @@ async function init() {
         const checked = document.querySelector('input[name="filterLimit"]:checked') as HTMLInputElement | null;
         return checked?.value || 'all';
       };
-      
-      const getSelectedBenchmarkTableId = () => {
-        const el = document.getElementById('benchmark-table-id') as HTMLInputElement | null;
-        return el?.value?.trim() || '';
-      };
-      
-      // 从已保存配置恢复（Config 状态）
-      try {
-        const config: any = await dashboard.getConfig();
-        if (config?.customConfig?.benchmarkTableId) {
-          const el = document.getElementById('benchmark-table-id') as HTMLInputElement | null;
-          if (el) el.value = String(config.customConfig.benchmarkTableId);
-        }
-      } catch (_) {}
       
       // 绑定"确定"按钮
       saveBtn.onclick = async () => {
@@ -2114,11 +2026,10 @@ async function init() {
           
           console.log('💾 保存dataConditions:', JSON.stringify(dataConditions, null, 2));
           
-          const benchmarkTableId = getSelectedBenchmarkTableId() || undefined;
-          // 保存dataConditions和customConfig（View状态下getData()会使用保存的dataConditions）
+          // 保存dataConditions和customConfig（中轴线不配置，运行时按表名自动查找「指标基准表」或按当前数据计算）
           await dashboard.saveConfig({
             dataConditions: [dataConditions], // SDK 需要数组格式
-            customConfig: { sizeFieldName, sortFieldName, filterLimit, tableId, fieldIds, baseToken, benchmarkTableId }
+            customConfig: { sizeFieldName, sortFieldName, filterLimit, tableId, fieldIds, baseToken }
           });
           
           statusEl.textContent = '✓ 配置已保存，组件将自动添加';
@@ -2143,7 +2054,7 @@ async function init() {
           const sortField = sizeField; // 排序字段和气泡大小字段相同
           const filterLimit = getSelectedFilterLimit();
           
-          const result = await loadPreviewData(dashboard, sizeField, sortField, filterLimit, getSelectedBenchmarkTableId() || undefined);
+          const result = await loadPreviewData(dashboard, sizeField, sortField, filterLimit, undefined);
           const data = result.data;
           if (data.length === 0) {
             statusEl.textContent = '⚠️ 暂无数据';
@@ -2179,8 +2090,6 @@ async function init() {
       document.querySelectorAll('input[name="sizeField"], input[name="filterLimit"]').forEach((el) => {
         el.addEventListener('change', () => loadPreview());
       });
-      const benchmarkInput = document.getElementById('benchmark-table-id');
-      if (benchmarkInput) benchmarkInput.addEventListener('blur', () => loadPreview());
       
       return;
     }
