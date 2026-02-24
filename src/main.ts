@@ -1,5 +1,5 @@
 // Version: 20260219-3 - 强制生成新 hash，彻底清除 CDN 缓存
-import { bitable, workspace } from '@lark-base-open/js-sdk';
+import { bitable, workspace, dashboard } from '@lark-base-open/js-sdk';
 import * as echarts from 'echarts';
 import '@lark-base-open/js-sdk/dist/style/dashboard.css';
 import './style.css';
@@ -621,121 +621,99 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
 
   myChart.setOption(option as any);
   
-  // 监听气泡点击事件：刷新所有主图
+  // 监听气泡点击事件：刷新所有主图（仅更新主图字段，不重新拉数值）
   myChart.off('click');  // 先移除旧监听器，避免重复绑定
   myChart.on('click', (params: any) => {
-    if (params.componentType === 'series') {
-      // 异步刷新主图，不阻塞事件处理
-      (async () => {
-        console.log('🔄 用户点击气泡，开始刷新所有主图 URL...');
+    if (params.componentType !== 'series') return;
+    // 异步刷新主图，不阻塞事件处理
+    (async () => {
+      if (!myChart) return;
+      console.log('🔄 用户点击气泡，开始刷新所有主图 URL...');
+      
+      myChart.showLoading({
+        text: '正在刷新主图...',
+        color: '#0052cc',
+        textColor: '#172b4d',
+        maskColor: 'rgba(255, 255, 255, 0.85)',
+        zlevel: 0
+      });
+      
+      try {
+        const base = bitable.base;
+        const config: any = await dashboard.getConfig();
+        const tableId = config?.dataConditions?.[0]?.tableId || config?.customConfig?.tableId;
+        if (!tableId) {
+          console.warn('无法获取 tableId，跳过主图刷新');
+          myChart.hideLoading();
+          return;
+        }
         
-        if (!myChart) return;
+        const table = await base.getTableById(tableId);
+        const fieldList = await table.getFieldList();
+        let imageFieldId: string | null = null;
+        for (const field of fieldList) {
+          const name = await field.getName();
+          if (name === FIELD_NAMES.image) {
+            imageFieldId = field.id;
+            break;
+          }
+        }
+        if (!imageFieldId) {
+          console.warn('未找到「商品主图」字段');
+          myChart.hideLoading();
+          return;
+        }
         
-        // 显示加载提示
-        myChart.showLoading({
-          text: '正在刷新主图...',
-          color: '#0052cc',
-          textColor: '#172b4d',
-          maskColor: 'rgba(255, 255, 255, 0.85)',
-          zlevel: 0
-        });
+        if (!data || data.length === 0) {
+          console.warn('数据为空，无法刷新');
+          myChart.hideLoading();
+          return;
+        }
         
-        try {
-          // 获取当前表和主图字段
-          const base = await (window as any).bitable?.base;
-          if (!base) {
-            console.warn('无法获取 bitable.base，跳过主图刷新');
-            if (myChart) myChart.hideLoading();
-            return;
-          }
-          
-          // 从 data 里拿到第一条的 recordId，推断出 tableId
-          if (!data || data.length === 0) {
-            console.warn('数据为空，无法刷新');
-            if (myChart) myChart.hideLoading();
-            return;
-          }
-          
-          // 通过 dashboard.getConfig 获取 tableId
-          const config: any = await (window as any).dashboard?.getConfig?.();
-          const tableId = config?.dataConditions?.[0]?.tableId || config?.customConfig?.tableId;
-          if (!tableId) {
-            console.warn('无法获取 tableId，跳过主图刷新');
-            if (myChart) myChart.hideLoading();
-            return;
-          }
-          
-          const table = await base.getTableById(tableId);
-          const fieldList = await table.getFieldList();
-          
-          let imageFieldId: string | null = null;
-          for (const field of fieldList) {
-            const name = await field.getName();
-            if (name === '商品主图') {
-              imageFieldId = field.id;
-              break;
-            }
-          }
-          
-          if (!imageFieldId) {
-            console.warn('未找到「商品主图」字段');
-            if (myChart) myChart.hideLoading();
-            return;
-          }
-          
-          // 批量刷新所有主图 URL（每50条并发一组）
           const batchSize = 50;
-          let refreshCount = 0;
-          
+        let refreshCount = 0;
           for (let i = 0; i < data.length; i += batchSize) {
-            const batch = data.slice(i, i + batchSize);
-            
-            await Promise.all(batch.map(async (item: any) => {
-              if (!item.recordId) return;
-              
-              try {
-                const record = await table.getRecordById(item.recordId);
-                const cell = await record.getCellByField(imageFieldId!);
-                const imageValue = await cell.getValue();
-                
-                let newImageUrl = '';
-                if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-                  newImageUrl = imageValue;
-                } else {
-                  const parsed = parseFirstAttachmentUrlOrToken(imageValue);
-                  if (parsed.url) {
-                    newImageUrl = parsed.url;
-                  } else if (parsed.token) {
-                    try {
-                      const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
-                      newImageUrl = urls?.[0] || '';
-                    } catch (_) {}
+          const batch = data.slice(i, i + batchSize);
+          await Promise.all(batch.map(async (item: any) => {
+            if (!item.recordId) return;
+            try {
+              const record = await table.getRecordById(item.recordId);
+              const cell = await (record as any).getCellByField(imageFieldId!);
+              const imageValue = await cell.getValue();
+              let newImageUrl = '';
+              if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+                newImageUrl = imageValue;
+              } else {
+                const parsed = parseFirstAttachmentUrlOrToken(imageValue);
+                if (parsed.url) {
+                  newImageUrl = parsed.url;
+                } else if (parsed.token) {
+                  try {
+                    const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
+                    newImageUrl = urls?.[0] || '';
+                  } catch {
+                    // ignore
                   }
                 }
-                
-                if (newImageUrl) {
-                  item.image = newImageUrl;
-                  refreshCount++;
-                }
-              } catch (err) {
-                console.warn(`刷新 recordId=${item.recordId} 主图失败:`, err);
               }
-            }));
-          }
-          
-          console.log(`✅ 已刷新 ${refreshCount}/${data.length} 个气泡的主图`);
-          if (myChart) myChart.hideLoading();
-          
-          // 重新渲染图表（使用更新后的 data）
-          renderChart(data, sizeFieldLabel, lastAxis);
-          
-        } catch (error: any) {
-          console.error('刷新主图失败:', error);
-          if (myChart) myChart.hideLoading();
-          alert(`刷新主图失败: ${error?.message || error}`);
+              if (newImageUrl) {
+                item.image = newImageUrl;
+                refreshCount++;
+              }
+            } catch (err) {
+              console.warn(`刷新 recordId=${item.recordId} 主图失败:`, err);
+            }
+          }));
         }
-      })();
-    }
+        console.log(`✅ 已刷新 ${refreshCount}/${data.length} 个气泡的主图`);
+        myChart.hideLoading();
+        // 重新渲染图表以应用新的主图 URL
+        renderChart(data, sizeFieldLabel, lastAxis);
+      } catch (error: any) {
+        console.error('刷新主图失败:', error);
+        myChart.hideLoading();
+      }
+    })();
   });
   
   // 添加坐标轴箭头（使用 graphic 组件，在图表渲染后动态计算位置）
