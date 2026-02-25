@@ -13,8 +13,8 @@ const FIELD_NAMES = {
   title: '商品标题',
   asin: 'ASIN',
   category: '初步产品分类',
-  image: '商品主图',  // 查找引用字段，getCellAttachmentUrls 得到临时 URL（会过期 400）
-  imageUrl: '主图链接', // 可选：文本字段存直链（如 Amazon CDN），不会过期，优先使用
+  image: '商品主图',  // 查找引用字段（附件），getCellAttachmentUrls 得到临时 URL（会过期 400）
+  imageUrl: '商品主图url', // 查找引用字段（URL），value[0].text 或 .link 为直链，不会过期，优先使用
   medianDemand: 'median_需求趋势得分',
   medianCompetition: 'median_竞争强度得分'
 };
@@ -659,7 +659,7 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
           else if (name === FIELD_NAMES.imageUrl) imageUrlFieldId = field.id;
         }
         if (!imageFieldId && !imageUrlFieldId) {
-          console.warn('未找到「商品主图」或「主图链接」字段');
+          console.warn('未找到「商品主图」或「商品主图url」字段');
           myChart.hideLoading();
           return;
         }
@@ -680,13 +680,11 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
             try {
               const record = await recordList.getRecordById(item.recordId);
               let newImageUrl = '';
-              // 优先用「主图链接」文本直链（不过期）
+              // 优先用「商品主图url」Lookup URL 字段（不过期直链）
               if (imageUrlFieldId) {
                 const urlCell = await record.getCellByField(imageUrlFieldId);
                 const urlVal = await urlCell.getValue();
-                if (typeof urlVal === 'string' && urlVal.startsWith('http')) {
-                  newImageUrl = urlVal;
-                }
+                newImageUrl = parseLookupUrl(urlVal);
               }
               if (!newImageUrl && imageFieldId) {
                 const cell = await record.getCellByField(imageFieldId);
@@ -951,6 +949,30 @@ function parseFirstAttachmentUrlOrToken(imageValue: any): { url?: string; token?
   if (url && typeof url === 'string' && url.startsWith('http')) return { url };
   if (token && typeof token === 'string') return { token };
   return {};
+}
+
+/** 从 Lookup URL 字段（如「商品主图url」）取值中解析出链接字符串 */
+function parseLookupUrl(value: any): string {
+  if (!value) return '';
+  // 简单字符串
+  if (typeof value === 'string' && value.startsWith('http')) return value;
+  // Lookup 返回：{type:1, value:[{text:"...", link:"...", type:"url"}]}
+  if (typeof value === 'object' && Array.isArray(value.value) && value.value.length > 0) {
+    const first = value.value[0];
+    if (first && typeof first === 'object') {
+      if (first.link && typeof first.link === 'string' && first.link.startsWith('http')) return first.link;
+      if (first.text && typeof first.text === 'string' && first.text.startsWith('http')) return first.text;
+    }
+  }
+  // 直接数组（部分 SDK 版本）
+  if (Array.isArray(value) && value.length > 0) {
+    const first = value[0];
+    if (first && typeof first === 'object') {
+      if (first.link && typeof first.link === 'string' && first.link.startsWith('http')) return first.link;
+      if (first.text && typeof first.text === 'string' && first.text.startsWith('http')) return first.text;
+    }
+  }
+  return '';
 }
 
 /** 解析指标基准表 ID：优先用配置的 ID；未配置时在本 base 内按表名查找「指标基准表」（或名称包含该关键字） */
@@ -1470,11 +1492,11 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
           const asin = asinVal || 'N/A';
           const category = categoryVal || '';
           
-          // 优先使用「主图链接」文本直链（不过期），否则用「商品主图」查找引用（临时 URL 会 400）
+          // 优先使用「商品主图url」Lookup URL 字段（不过期直链），否则用「商品主图」查找引用（临时 URL 会 400）
           let imageUrl = '';
-          if (typeof imageUrlVal === 'string' && imageUrlVal.startsWith('http')) imageUrl = imageUrlVal;
-          else if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
-          else {
+          if (imageUrlVal) imageUrl = parseLookupUrl(imageUrlVal);
+          if (!imageUrl && typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
+          if (!imageUrl) {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
             if (directUrl) imageUrl = directUrl;
             else if (token && requiredFieldIds.image) {
@@ -1724,11 +1746,11 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
           const title = titleVal || '未知';
           const asin = asinVal || 'N/A';
           const category = categoryVal || '';
-          // 优先使用「主图链接」文本直链（不过期），否则用「商品主图」查找引用
+          // 优先使用「商品主图url」Lookup URL 字段（不过期直链），否则用「商品主图」查找引用
           let imageUrl = '';
-          if (typeof imageUrlVal === 'string' && imageUrlVal.startsWith('http')) imageUrl = imageUrlVal;
-          else if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
-          else {
+          if (imageUrlVal) imageUrl = parseLookupUrl(imageUrlVal);
+          if (!imageUrl && typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
+          if (!imageUrl) {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
             if (directUrl) imageUrl = directUrl;
             else if (token && requiredFieldIds.image) {
