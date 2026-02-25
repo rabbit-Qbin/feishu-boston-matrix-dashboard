@@ -434,14 +434,14 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
         const titleText = v[3] || '未知';
         const categoryZh = v[5] || '其他';
         const categoryColor = getCategoryColor(categoryZh);
-        const imageUrl = v[6] || ''; // 商品主图：加载时已拉取（选品结果表内「查找引用」的商品主图），一直用该 URL 显示
+        const imageUrl = v[6] || ''; // 商品主图：优先为「商品主图url」直链，不会过期
         const imageHtml = `
           <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
             <div style="width: 100px; height: 100px; flex-shrink: 0; border-radius: 6px; border: 1px solid #dfe1e6; overflow: hidden; background: #f4f5f7; display: flex; align-items: center; justify-content: center;">
               ${imageUrl
                 ? `<img src="${imageUrl}" alt="商品主图" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='block');">
-              <span style="display:none;color:#97a0af;font-size:10px;text-align:center;padding:4px;">暂无主图<br/><span style="font-size:9px;">(点击气泡刷新)</span></span>`
-                : '<span style="color: #97a0af; font-size: 10px; text-align: center; padding: 4px;">暂无主图<br/><span style="font-size: 9px;">(点击气泡刷新)</span></span>'}
+              <span style="display:none;color:#97a0af;font-size:10px;text-align:center;padding:4px;">暂无主图</span>`
+                : '<span style="color: #97a0af; font-size: 10px; text-align: center; padding: 4px;">暂无主图</span>'}
             </div>
             <div style="flex: 1; min-width: 0;"><div style="font-weight: 600; color: #172b4d; white-space: normal; word-break: break-word; line-height: 1.4;">${titleText}</div></div>
           </div>
@@ -622,126 +622,7 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
 
   myChart.setOption(option as any);
   
-  // 监听气泡点击事件：刷新所有主图（仅更新主图字段，不重新拉数值）
-  myChart.off('click');  // 先移除旧监听器，避免重复绑定
-  myChart.on('click', (params: any) => {
-    if (params.componentType !== 'series') return;
-    // 异步刷新主图，不阻塞事件处理
-    (async () => {
-      if (!myChart) return;
-      console.log('🔄 用户点击气泡，开始刷新所有主图 URL...');
-      
-      myChart.showLoading({
-        text: '正在刷新主图...',
-        color: '#0052cc',
-        textColor: '#172b4d',
-        maskColor: 'rgba(255, 255, 255, 0.85)',
-        zlevel: 0
-      });
-      
-      try {
-        const base = bitable.base;
-        const config: any = await dashboard.getConfig();
-        const tableId = config?.dataConditions?.[0]?.tableId || config?.customConfig?.tableId;
-        if (!tableId) {
-          console.warn('无法获取 tableId，跳过主图刷新');
-          myChart.hideLoading();
-          return;
-        }
-        
-        const table = await base.getTableById(tableId);
-        const fieldList = await table.getFieldList();
-        let imageFieldId: string | null = null;
-        let imageUrlFieldId: string | null = null;
-        for (const field of fieldList) {
-          const name = await field.getName();
-          if (name === FIELD_NAMES.image) imageFieldId = field.id;
-          else if (name === FIELD_NAMES.imageUrl) imageUrlFieldId = field.id;
-        }
-        if (!imageFieldId && !imageUrlFieldId) {
-          console.warn('未找到「商品主图」或「商品主图url」字段');
-          myChart.hideLoading();
-          return;
-        }
-        
-        if (!data || data.length === 0) {
-          console.warn('数据为空，无法刷新');
-          myChart.hideLoading();
-          return;
-        }
-        
-        const recordList = await table.getRecordList();
-        const batchSize = 50;
-        let refreshCount = 0;
-        let sourceStats = { '商品主图url': 0, '商品主图(字符串)': 0, '商品主图(附件)': 0, '失败': 0 };
-        for (let i = 0; i < data.length; i += batchSize) {
-          const batch = data.slice(i, i + batchSize);
-          await Promise.all(batch.map(async (item: any) => {
-            if (!item.recordId) return;
-            try {
-              const record = await recordList.getRecordById(item.recordId);
-              if (!record) {
-                console.warn(`⚠️ recordId=${item.recordId} 不在当前 recordList 中，跳过刷新`);
-                sourceStats['失败']++;
-                return;
-              }
-              let newImageUrl = '';
-              let source = '';
-              // 优先用「商品主图url」Lookup URL 字段（不过期直链）
-              if (imageUrlFieldId) {
-                try {
-                  const urlCell = await record.getCellByField(imageUrlFieldId);
-                  const urlVal = await urlCell.getValue();
-                  newImageUrl = parseLookupUrl(urlVal);
-                  if (newImageUrl) source = '商品主图url';
-                } catch (e) {
-                  console.warn(`读取 recordId=${item.recordId} 的商品主图url 失败:`, e);
-                }
-              }
-              if (!newImageUrl && imageFieldId) {
-                const cell = await record.getCellByField(imageFieldId);
-                const imageValue = await cell.getValue();
-                if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-                  newImageUrl = imageValue;
-                  source = '商品主图(字符串)';
-                } else {
-                  const parsed = parseFirstAttachmentUrlOrToken(imageValue);
-                  if (parsed.url) {
-                    newImageUrl = parsed.url;
-                    source = '商品主图(附件)';
-                  } else if (parsed.token) {
-                    try {
-                      const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
-                      newImageUrl = urls?.[0] || '';
-                      if (newImageUrl) source = '商品主图(附件)';
-                    } catch { /* ignore */ }
-                  }
-                }
-              }
-              if (newImageUrl) {
-                item.image = newImageUrl;
-                refreshCount++;
-                sourceStats[source as keyof typeof sourceStats]++;
-              } else {
-                sourceStats['失败']++;
-              }
-            } catch (err) {
-              console.warn(`刷新 recordId=${item.recordId} 主图失败:`, err);
-              sourceStats['失败']++;
-            }
-          }));
-        }
-        console.log(`✅ 已刷新 ${refreshCount}/${data.length} 个气泡的主图`);
-        console.log(`🖼️ 刷新主图来源统计:`, sourceStats, '← 若大量"商品主图(附件)"则会逐个过期400');
-        myChart.hideLoading();
-        // 重新渲染图表以应用新的主图 URL
-        renderChart(data, sizeFieldLabel, lastAxis);
-      } catch (error: any) {
-        console.error('刷新主图失败:', error);
-        myChart.hideLoading();
-      }
-    })();
-  });
+  // 主图已优先使用「商品主图url」直链，不会过期，不再提供点击刷新主图（getRecordById/record 在 dashboard 环境下易报错）
   
   // 添加坐标轴箭头（使用 graphic 组件，在图表渲染后动态计算位置）
   setTimeout(() => {
