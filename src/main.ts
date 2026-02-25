@@ -1,4 +1,4 @@
-// Version: 20260219-3 - 强制生成新 hash，彻底清除 CDN 缓存
+// Version: 20260221-1 - 移除刷新主图逻辑，仅用直链；新构建后请全量覆盖部署并清缓存
 import { bitable, workspace, dashboard } from '@lark-base-open/js-sdk';
 import * as echarts from 'echarts';
 import '@lark-base-open/js-sdk/dist/style/dashboard.css';
