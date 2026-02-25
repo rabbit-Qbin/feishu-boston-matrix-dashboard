@@ -670,15 +670,17 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
           return;
         }
         
-          const batchSize = 50;
+        // getRecordById 在 recordList 上，不在 table 上
+        const recordList = await table.getRecordList();
+        const batchSize = 50;
         let refreshCount = 0;
-          for (let i = 0; i < data.length; i += batchSize) {
+        for (let i = 0; i < data.length; i += batchSize) {
           const batch = data.slice(i, i + batchSize);
           await Promise.all(batch.map(async (item: any) => {
             if (!item.recordId) return;
             try {
-              const record = await table.getRecordById(item.recordId);
-              const cell = await (record as any).getCellByField(imageFieldId!);
+              const record = await recordList.getRecordById(item.recordId);
+              const cell = await record.getCellByField(imageFieldId!);
               const imageValue = await cell.getValue();
               let newImageUrl = '';
               if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
