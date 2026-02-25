@@ -13,7 +13,8 @@ const FIELD_NAMES = {
   title: '商品标题',
   asin: 'ASIN',
   category: '初步产品分类',
-  image: '商品主图',  // 新增商品主图字段
+  image: '商品主图',  // 查找引用字段，getCellAttachmentUrls 得到临时 URL（会过期 400）
+  imageUrl: '主图链接', // 可选：文本字段存直链（如 Amazon CDN），不会过期，优先使用
   medianDemand: 'median_需求趋势得分',
   medianCompetition: 'median_竞争强度得分'
 };
@@ -651,15 +652,14 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
         const table = await base.getTableById(tableId);
         const fieldList = await table.getFieldList();
         let imageFieldId: string | null = null;
+        let imageUrlFieldId: string | null = null;
         for (const field of fieldList) {
           const name = await field.getName();
-          if (name === FIELD_NAMES.image) {
-            imageFieldId = field.id;
-            break;
-          }
+          if (name === FIELD_NAMES.image) imageFieldId = field.id;
+          else if (name === FIELD_NAMES.imageUrl) imageUrlFieldId = field.id;
         }
-        if (!imageFieldId) {
-          console.warn('未找到「商品主图」字段');
+        if (!imageFieldId && !imageUrlFieldId) {
+          console.warn('未找到「商品主图」或「主图链接」字段');
           myChart.hideLoading();
           return;
         }
@@ -670,7 +670,6 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
           return;
         }
         
-        // getRecordById 在 recordList 上，不在 table 上
         const recordList = await table.getRecordList();
         const batchSize = 50;
         let refreshCount = 0;
@@ -680,21 +679,28 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
             if (!item.recordId) return;
             try {
               const record = await recordList.getRecordById(item.recordId);
-              const cell = await record.getCellByField(imageFieldId!);
-              const imageValue = await cell.getValue();
               let newImageUrl = '';
-              if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
-                newImageUrl = imageValue;
-              } else {
-                const parsed = parseFirstAttachmentUrlOrToken(imageValue);
-                if (parsed.url) {
-                  newImageUrl = parsed.url;
-                } else if (parsed.token) {
-                  try {
-                    const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
-                    newImageUrl = urls?.[0] || '';
-                  } catch {
-                    // ignore
+              // 优先用「主图链接」文本直链（不过期）
+              if (imageUrlFieldId) {
+                const urlCell = await record.getCellByField(imageUrlFieldId);
+                const urlVal = await urlCell.getValue();
+                if (typeof urlVal === 'string' && urlVal.startsWith('http')) {
+                  newImageUrl = urlVal;
+                }
+              }
+              if (!newImageUrl && imageFieldId) {
+                const cell = await record.getCellByField(imageFieldId);
+                const imageValue = await cell.getValue();
+                if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+                  newImageUrl = imageValue;
+                } else {
+                  const parsed = parseFirstAttachmentUrlOrToken(imageValue);
+                  if (parsed.url) newImageUrl = parsed.url;
+                  else if (parsed.token) {
+                    try {
+                      const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
+                      newImageUrl = urls?.[0] || '';
+                    } catch { /* ignore */ }
                   }
                 }
               }
@@ -1341,7 +1347,8 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       category: fieldIdsMap[FIELD_NAMES.category],
       profit: fieldIdsMap[FIELD_NAMES.profit],
       comprehensive: fieldIdsMap[FIELD_NAMES.comprehensive],
-      image: fieldIdsMap[FIELD_NAMES.image]  // 商品主图字段
+      image: fieldIdsMap[FIELD_NAMES.image],
+      imageUrl: fieldIdsMap[FIELD_NAMES.imageUrl]  // 可选：主图链接（文本直链，不过期）
     };
     
     if (!requiredFieldIds.demand || !requiredFieldIds.competition || !requiredFieldIds.size) {
@@ -1432,7 +1439,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       
       const pagePromises = pageRecords.map(async (record: any) => {
         try {
-          // 固定顺序：需求、竞争、大小、排序、标题、ASIN、分类、主图（无则 null 占位）
+          // 固定顺序：需求、竞争、大小、排序、标题、ASIN、分类、主图、主图链接（可选）
           const cellPromises: Promise<any>[] = [
             record.getCellByField(requiredFieldIds.demand!),
             record.getCellByField(requiredFieldIds.competition!),
@@ -1441,11 +1448,12 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
             requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
             requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
-            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
+            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null),
+            requiredFieldIds.imageUrl ? record.getCellByField(requiredFieldIds.imageUrl) : Promise.resolve(null)
           ];
           const cells = await Promise.all(cellPromises);
           
-          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue] = await Promise.all([
+          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue, imageUrlVal] = await Promise.all([
             cells[0].getValue().then((v: any) => toNumber(v)),
             cells[1].getValue().then((v: any) => toNumber(v)),
             cells[2].getValue().then((v: any) => toNumber(v)),
@@ -1453,7 +1461,8 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             cells[4] ? cells[4].getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
             cells[5] ? cells[5].getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
             cells[6] ? cells[6].getValue().then((v: any) => toText(v)) : Promise.resolve(''),
-            cells[7] ? cells[7].getValue() : Promise.resolve(null)
+            cells[7] ? cells[7].getValue() : Promise.resolve(null),
+            cells[8] ? cells[8].getValue().then((v: any) => (typeof v === 'string' ? v : null)) : Promise.resolve(null)
           ]);
           if (x === undefined || y === undefined || size === undefined) return null;
           
@@ -1461,8 +1470,10 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
           const asin = asinVal || 'N/A';
           const category = categoryVal || '';
           
+          // 优先使用「主图链接」文本直链（不过期），否则用「商品主图」查找引用（临时 URL 会 400）
           let imageUrl = '';
-          if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
+          if (typeof imageUrlVal === 'string' && imageUrlVal.startsWith('http')) imageUrl = imageUrlVal;
+          else if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
           else {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
             if (directUrl) imageUrl = directUrl;
@@ -1584,7 +1595,8 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
       category: fieldIdsMap[FIELD_NAMES.category],
       profit: fieldIdsMap[FIELD_NAMES.profit],
       comprehensive: fieldIdsMap[FIELD_NAMES.comprehensive],
-      image: fieldIdsMap[FIELD_NAMES.image]  // 商品主图字段
+      image: fieldIdsMap[FIELD_NAMES.image],
+      imageUrl: fieldIdsMap[FIELD_NAMES.imageUrl]  // 可选：主图链接（文本直链，不过期）
     };
     
     if (!requiredFieldIds.demand || !requiredFieldIds.competition || !requiredFieldIds.size) {
@@ -1692,10 +1704,11 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             requiredFieldIds.title ? record.getCellByField(requiredFieldIds.title) : Promise.resolve(null),
             requiredFieldIds.asin ? record.getCellByField(requiredFieldIds.asin) : Promise.resolve(null),
             requiredFieldIds.category ? record.getCellByField(requiredFieldIds.category) : Promise.resolve(null),
-            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null)
+            requiredFieldIds.image ? record.getCellByField(requiredFieldIds.image) : Promise.resolve(null),
+            requiredFieldIds.imageUrl ? record.getCellByField(requiredFieldIds.imageUrl) : Promise.resolve(null)
           ];
           const cells = await Promise.all(cellPromises);
-          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue] = await Promise.all([
+          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue, imageUrlVal] = await Promise.all([
             cells[0].getValue().then((v: any) => toNumber(v)),
             cells[1].getValue().then((v: any) => toNumber(v)),
             cells[2].getValue().then((v: any) => toNumber(v)),
@@ -1703,15 +1716,18 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             cells[4] ? cells[4].getValue().then((v: any) => toText(v)) : Promise.resolve('未知'),
             cells[5] ? cells[5].getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
             cells[6] ? cells[6].getValue().then((v: any) => toText(v)) : Promise.resolve(''),
-            cells[7] ? cells[7].getValue() : Promise.resolve(null)
+            cells[7] ? cells[7].getValue() : Promise.resolve(null),
+            cells[8] ? cells[8].getValue().then((v: any) => (typeof v === 'string' ? v : null)) : Promise.resolve(null)
           ]);
           if (x === undefined || y === undefined || size === undefined) return null;
           
           const title = titleVal || '未知';
           const asin = asinVal || 'N/A';
           const category = categoryVal || '';
+          // 优先使用「主图链接」文本直链（不过期），否则用「商品主图」查找引用
           let imageUrl = '';
-          if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
+          if (typeof imageUrlVal === 'string' && imageUrlVal.startsWith('http')) imageUrl = imageUrlVal;
+          else if (typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
           else {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
             if (directUrl) imageUrl = directUrl;
