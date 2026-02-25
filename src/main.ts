@@ -673,31 +673,47 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
         const recordList = await table.getRecordList();
         const batchSize = 50;
         let refreshCount = 0;
+        let sourceStats = { '商品主图url': 0, '商品主图(字符串)': 0, '商品主图(附件)': 0, '失败': 0 };
         for (let i = 0; i < data.length; i += batchSize) {
           const batch = data.slice(i, i + batchSize);
           await Promise.all(batch.map(async (item: any) => {
             if (!item.recordId) return;
             try {
               const record = await recordList.getRecordById(item.recordId);
+              if (!record) {
+                console.warn(`⚠️ recordId=${item.recordId} 不在当前 recordList 中，跳过刷新`);
+                sourceStats['失败']++;
+                return;
+              }
               let newImageUrl = '';
+              let source = '';
               // 优先用「商品主图url」Lookup URL 字段（不过期直链）
               if (imageUrlFieldId) {
-                const urlCell = await record.getCellByField(imageUrlFieldId);
-                const urlVal = await urlCell.getValue();
-                newImageUrl = parseLookupUrl(urlVal);
+                try {
+                  const urlCell = await record.getCellByField(imageUrlFieldId);
+                  const urlVal = await urlCell.getValue();
+                  newImageUrl = parseLookupUrl(urlVal);
+                  if (newImageUrl) source = '商品主图url';
+                } catch (e) {
+                  console.warn(`读取 recordId=${item.recordId} 的商品主图url 失败:`, e);
+                }
               }
               if (!newImageUrl && imageFieldId) {
                 const cell = await record.getCellByField(imageFieldId);
                 const imageValue = await cell.getValue();
                 if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
                   newImageUrl = imageValue;
+                  source = '商品主图(字符串)';
                 } else {
                   const parsed = parseFirstAttachmentUrlOrToken(imageValue);
-                  if (parsed.url) newImageUrl = parsed.url;
-                  else if (parsed.token) {
+                  if (parsed.url) {
+                    newImageUrl = parsed.url;
+                    source = '商品主图(附件)';
+                  } else if (parsed.token) {
                     try {
                       const urls = await table.getCellAttachmentUrls([parsed.token], imageFieldId!, item.recordId);
                       newImageUrl = urls?.[0] || '';
+                      if (newImageUrl) source = '商品主图(附件)';
                     } catch { /* ignore */ }
                   }
                 }
@@ -705,13 +721,18 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
               if (newImageUrl) {
                 item.image = newImageUrl;
                 refreshCount++;
+                sourceStats[source as keyof typeof sourceStats]++;
+              } else {
+                sourceStats['失败']++;
               }
             } catch (err) {
               console.warn(`刷新 recordId=${item.recordId} 主图失败:`, err);
+              sourceStats['失败']++;
             }
           }));
         }
         console.log(`✅ 已刷新 ${refreshCount}/${data.length} 个气泡的主图`);
+        console.log(`🖼️ 刷新主图来源统计:`, sourceStats, '← 若大量"商品主图(附件)"则会逐个过期400');
         myChart.hideLoading();
         // 重新渲染图表以应用新的主图 URL
         renderChart(data, sizeFieldLabel, lastAxis);
@@ -1459,9 +1480,9 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
         console.log(`📋 处理第 ${currentPage}/${totalPages} 页（${pageRecords.length} 条）...`);
       }
       
-      const pagePromises = pageRecords.map(async (record: any) => {
+      const pagePromises = pageRecords.map(async (record: any, recordIdxInPage: number) => {
         try {
-          // 固定顺序：需求、竞争、大小、排序、标题、ASIN、分类、主图、主图链接（可选）
+          // 固定顺序：需求、竞争、大小、排序、标题、ASIN、分类、主图、商品主图url（Lookup）
           const cellPromises: Promise<any>[] = [
             record.getCellByField(requiredFieldIds.demand!),
             record.getCellByField(requiredFieldIds.competition!),
@@ -1475,7 +1496,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
           ];
           const cells = await Promise.all(cellPromises);
           
-          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue, imageUrlVal] = await Promise.all([
+          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue, imageUrlValRaw] = await Promise.all([
             cells[0].getValue().then((v: any) => toNumber(v)),
             cells[1].getValue().then((v: any) => toNumber(v)),
             cells[2].getValue().then((v: any) => toNumber(v)),
@@ -1484,7 +1505,7 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             cells[5] ? cells[5].getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
             cells[6] ? cells[6].getValue().then((v: any) => toText(v)) : Promise.resolve(''),
             cells[7] ? cells[7].getValue() : Promise.resolve(null),
-            cells[8] ? cells[8].getValue().then((v: any) => (typeof v === 'string' ? v : null)) : Promise.resolve(null)
+            cells[8] ? cells[8].getValue() : Promise.resolve(null)  // 保留原始值：Lookup 返回 {type, value:[{link,text}]}
           ]);
           if (x === undefined || y === undefined || size === undefined) return null;
           
@@ -1492,19 +1513,39 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
           const asin = asinVal || 'N/A';
           const category = categoryVal || '';
           
-          // 优先使用「商品主图url」Lookup URL 字段（不过期直链），否则用「商品主图」查找引用（临时 URL 会 400）
+          // 主图优先级：1 商品主图url(直链) 2 商品主图字符串 3 商品主图附件(token→临时URL)
           let imageUrl = '';
-          if (imageUrlVal) imageUrl = parseLookupUrl(imageUrlVal);
-          if (!imageUrl && typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
-          if (!imageUrl) {
+          let imageSource: '商品主图url' | '商品主图(字符串)' | '商品主图(附件)' | '无' = '无';
+          imageUrl = parseLookupUrl(imageUrlValRaw);
+          if (imageUrl) imageSource = '商品主图url';
+          else if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+            imageUrl = imageValue;
+            imageSource = '商品主图(字符串)';
+          } else {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
-            if (directUrl) imageUrl = directUrl;
-            else if (token && requiredFieldIds.image) {
+            if (directUrl) {
+              imageUrl = directUrl;
+              imageSource = '商品主图(附件)';
+            } else if (token && requiredFieldIds.image) {
               try {
                 const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
                 imageUrl = urls?.[0] || '';
+                if (imageUrl) imageSource = '商品主图(附件)';
               } catch (_) {}
             }
+          }
+          
+          // 调试日志：仅对全局前 3 条打印
+          const globalIdx = pageIdx + recordIdxInPage;
+          if (globalIdx < 3) {
+            console.log(`🔍 [主图调试] 第 ${globalIdx + 1} 条 asin=${asin}`, {
+              '商品主图url_raw 类型': imageUrlValRaw == null ? 'null' : typeof imageUrlValRaw,
+              '商品主图url_raw 结构': imageUrlValRaw && typeof imageUrlValRaw === 'object'
+                ? { type: imageUrlValRaw.type, valueLen: Array.isArray(imageUrlValRaw.value) ? imageUrlValRaw.value.length : 0, value0: imageUrlValRaw.value?.[0] }
+                : imageUrlValRaw,
+              'parseLookupUrl 结果': imageUrl ? imageUrl.substring(0, 60) + '...' : '(空)',
+              '最终来源': imageSource
+            });
           }
           
           return {
@@ -1514,7 +1555,8 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
             comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
             title, asin, category,
             image: imageUrl,
-            recordId: record.id  // 保存 recordId 用于后续刷新主图
+            recordId: record.id,
+            _imageSource: imageSource
           };
         } catch (e: any) {
           return null;
@@ -1524,6 +1566,20 @@ async function loadPreviewData(dashboard: any, sizeFieldName: string, sortFieldN
       const pageResults = await Promise.all(pagePromises);
       allData.push(...pageResults.filter(r => r !== null));
     }
+    
+    const sourceCounts: Record<string, number> = {};
+    allData.forEach((r: any) => {
+      const s = r._imageSource || '无';
+      sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+    });
+    console.log('🖼️ 主图来源统计:', sourceCounts, '(优先商品主图url直链，其次商品主图附件)');
+    if (allData.length > 0) {
+      console.log('📸 前 3 条主图样本:');
+      allData.slice(0, 3).forEach((r: any, idx: number) => {
+        console.log(`  [${idx + 1}] ${r.asin} → ${r._imageSource}: ${r.image ? r.image.substring(0, 80) + '...' : '(无)'}`);
+      });
+    }
+    allData.forEach((r: any) => delete r._imageSource);
     
     let midX: number;
     let midY: number;
@@ -1730,7 +1786,7 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             requiredFieldIds.imageUrl ? record.getCellByField(requiredFieldIds.imageUrl) : Promise.resolve(null)
           ];
           const cells = await Promise.all(cellPromises);
-          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue, imageUrlVal] = await Promise.all([
+          const [x, y, size, sortValue, titleVal, asinVal, categoryVal, imageValue, imageUrlValRaw] = await Promise.all([
             cells[0].getValue().then((v: any) => toNumber(v)),
             cells[1].getValue().then((v: any) => toNumber(v)),
             cells[2].getValue().then((v: any) => toNumber(v)),
@@ -1739,24 +1795,30 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             cells[5] ? cells[5].getValue().then((v: any) => toText(v)) : Promise.resolve('N/A'),
             cells[6] ? cells[6].getValue().then((v: any) => toText(v)) : Promise.resolve(''),
             cells[7] ? cells[7].getValue() : Promise.resolve(null),
-            cells[8] ? cells[8].getValue().then((v: any) => (typeof v === 'string' ? v : null)) : Promise.resolve(null)
+            cells[8] ? cells[8].getValue() : Promise.resolve(null)
           ]);
           if (x === undefined || y === undefined || size === undefined) return null;
           
           const title = titleVal || '未知';
           const asin = asinVal || 'N/A';
           const category = categoryVal || '';
-          // 优先使用「商品主图url」Lookup URL 字段（不过期直链），否则用「商品主图」查找引用
           let imageUrl = '';
-          if (imageUrlVal) imageUrl = parseLookupUrl(imageUrlVal);
-          if (!imageUrl && typeof imageValue === 'string' && imageValue.startsWith('http')) imageUrl = imageValue;
-          if (!imageUrl) {
+          let imageSource: '商品主图url' | '商品主图(字符串)' | '商品主图(附件)' | '无' = '无';
+          imageUrl = parseLookupUrl(imageUrlValRaw);
+          if (imageUrl) imageSource = '商品主图url';
+          else if (typeof imageValue === 'string' && imageValue.startsWith('http')) {
+            imageUrl = imageValue;
+            imageSource = '商品主图(字符串)';
+          } else {
             const { url: directUrl, token } = parseFirstAttachmentUrlOrToken(imageValue);
-            if (directUrl) imageUrl = directUrl;
-            else if (token && requiredFieldIds.image) {
+            if (directUrl) {
+              imageUrl = directUrl;
+              imageSource = '商品主图(附件)';
+            } else if (token && requiredFieldIds.image) {
               try {
                 const urls = await table.getCellAttachmentUrls([token], requiredFieldIds.image, record.id);
                 imageUrl = urls?.[0] || '';
+                if (imageUrl) imageSource = '商品主图(附件)';
               } catch (_) {}
             }
           }
@@ -1766,7 +1828,8 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
             profit: sortFieldName === FIELD_NAMES.profit ? sortValue : undefined,
             comprehensive: sortFieldName === FIELD_NAMES.comprehensive ? sortValue : undefined,
             title, asin, category, image: imageUrl,
-            recordId: record.id  // 保存 recordId 用于后续刷新主图
+            recordId: record.id,
+            _imageSource: imageSource
           };
         } catch (e: any) {
           return null;
@@ -1775,6 +1838,20 @@ async function loadViewData(dashboard: any, sizeFieldName: string, savedDataCond
       const pageResults = await Promise.all(pagePromises);
       allData.push(...pageResults.filter(r => r !== null));
     }
+    
+    const sourceCounts: Record<string, number> = {};
+    allData.forEach((r: any) => {
+      const s = r._imageSource || '无';
+      sourceCounts[s] = (sourceCounts[s] || 0) + 1;
+    });
+    console.log('🖼️ [View] 主图来源统计:', sourceCounts);
+    if (allData.length > 0) {
+      console.log('📸 [View] 前 3 条主图样本:');
+      allData.slice(0, 3).forEach((r: any, idx: number) => {
+        console.log(`  [${idx + 1}] ${r.asin} → ${r._imageSource}: ${r.image ? r.image.substring(0, 80) + '...' : '(无)'}`);
+      });
+    }
+    allData.forEach((r: any) => delete r._imageSource);
     
     let midX: number;
     let midY: number;
