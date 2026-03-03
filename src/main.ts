@@ -198,10 +198,15 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   const roundDown = (n: number) => Math.floor(n / 10) * 10;
   const roundUp = (n: number) => Math.ceil(n / 10) * 10;
   
-  let xMin = roundDown(Math.min(...xs));
-  let xMax = roundUp(Math.max(...xs));
-  let yMin = roundDown(Math.min(...ys));
-  let yMax = roundUp(Math.max(...ys));
+  // 坐标轴范围美观性调整：
+  // - X/Y 最大值固定拉到 100 分（得分本身已限定在 0–100，避免继续按数据进位到 110/120）
+  // - X/Y 最小值在原向下取整十位的基础上，再向下扩一档十位（例如 min=30.5 → 先取30，再退到20），并不低于 0
+  const rawXMin = roundDown(Math.min(...xs));
+  const rawYMin = roundDown(Math.min(...ys));
+  let xMin = Math.max(0, rawXMin - 10);
+  let yMin = Math.max(0, rawYMin - 10);
+  let xMax = 100;
+  let yMax = 100;
   
   // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
   const eps = 1e-6;
