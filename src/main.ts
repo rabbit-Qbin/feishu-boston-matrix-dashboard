@@ -209,8 +209,13 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   const ceil10 = (v: number) => Math.ceil(v / 10) * 10;
   let xMin = Math.max(0, nearest10(minXVal) - 10);
   let yMin = Math.max(0, nearest10(minYVal) - 10);
-  let xMax = Math.min(100, ceil10(maxXVal));
-  let yMax = Math.min(100, ceil10(maxYVal));
+  const baseXMax = ceil10(maxXVal);
+  const baseYMax = ceil10(maxYVal);
+  // 如果离上一个十位不足 5 分，则再多给一档 10 分缓冲（例如 85.6 → 100）
+  const bump = (base: number, val: number) =>
+    base < 100 && base - val < 5 ? base + 10 : base;
+  let xMax = Math.min(100, bump(baseXMax, maxXVal));
+  let yMax = Math.min(100, bump(baseYMax, maxYVal));
   
   // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
   const eps = 1e-6;
