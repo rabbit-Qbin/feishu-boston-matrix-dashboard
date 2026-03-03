@@ -199,14 +199,18 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   const roundUp = (n: number) => Math.ceil(n / 10) * 10;
   
   // 坐标轴范围美观性调整：
-  // - X/Y 最大值固定拉到 100 分（得分本身已限定在 0–100，避免继续按数据进位到 110/120）
-  // - X/Y 最小值在原向下取整十位的基础上，再向下扩一档十位（例如 min=30.5 → 先取30，再退到20），并不低于 0
-  const rawXMin = roundDown(Math.min(...xs));
-  const rawYMin = roundDown(Math.min(...ys));
-  let xMin = Math.max(0, rawXMin - 10);
-  let yMin = Math.max(0, rawYMin - 10);
-  let xMax = 100;
-  let yMax = 100;
+  // - X/Y 最大值：按上取整到最近的 10（81.5 → 90，89.5 → 100），并不超过 100
+  // - X/Y 最小值：先按「四舍五入到最近的 10」，再向下退一档 10（31.5 → 20，35.2 → 30），不低于 0
+  const minXVal = Math.min(...xs);
+  const minYVal = Math.min(...ys);
+  const maxXVal = Math.max(...xs);
+  const maxYVal = Math.max(...ys);
+  const nearest10 = (v: number) => Math.round(v / 10) * 10;
+  const ceil10 = (v: number) => Math.ceil(v / 10) * 10;
+  let xMin = Math.max(0, nearest10(minXVal) - 10);
+  let yMin = Math.max(0, nearest10(minYVal) - 10);
+  let xMax = Math.min(100, ceil10(maxXVal));
+  let yMax = Math.min(100, ceil10(maxYVal));
   
   // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
   const eps = 1e-6;
