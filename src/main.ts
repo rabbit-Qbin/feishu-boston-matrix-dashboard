@@ -199,36 +199,31 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
     yRange: ys.length ? `[${Math.min(...ys)}, ${Math.max(...ys)}]` : '-'
   });
   
-  const roundDown = (n: number) => Math.floor(n / 10) * 10;
-  const roundUp = (n: number) => Math.ceil(n / 10) * 10;
-  
-  // 坐标轴范围美观性调整：
-  // - X/Y 最大值：按上取整到最近的 10（81.5 → 90，89.5 → 100），并不超过 100
-  // - X/Y 最小值：先按「四舍五入到最近的 10」，再向下退一档 10（31.5 → 20，35.2 → 30），不低于 0
+  // 坐标轴美观取整（统一规则，不固定区间）：
+  // 【最大值】十位 base，余数 = val - base；余数 < 6.5 进 1 档（+10），≥ 6.5 进 2 档（+20），不超过 100。例：81.5→90，86.5→100。
+  // 【最小值】先四舍五入到 10，再退一档 10，不低于 0。例：31.5→20，35.2→30。
   const minXVal = Math.min(...xs);
   const minYVal = Math.min(...ys);
   const maxXVal = Math.max(...xs);
   const maxYVal = Math.max(...ys);
-  const nearest10 = (v: number) => Math.round(v / 10) * 10;
-  const ceil10 = (v: number) => Math.ceil(v / 10) * 10;
-  let xMin = Math.max(0, nearest10(minXVal) - 10);
-  let yMin = Math.max(0, nearest10(minYVal) - 10);
-  const baseXMax = ceil10(maxXVal);
-  const baseYMax = ceil10(maxYVal);
-  // 如果离上一个十位不足 5 分，则再多给一档 10 分缓冲（例如 85.6 → 100）
-  const bump = (base: number, val: number) =>
-    base < 100 && base - val < 5 ? base + 10 : base;
-  let xMax = Math.min(100, bump(baseXMax, maxXVal));
-  let yMax = Math.min(100, bump(baseYMax, maxYVal));
 
-  // 特殊规则：如果 X 轴（需求趋势得分）整体偏高（最大值 > 86.5），统一拉到 [20, 100]，方便横向对比
-  if (maxXVal > 86.5) {
-    xMin = 20;
-    xMax = 100;
-    console.log('📐 X轴：需求最大值', maxXVal.toFixed(1), '> 86.5，已固定 X 轴范围为 [20, 100]');
-  } else {
-    console.log('📐 X轴：需求最大值', maxXVal.toFixed(1), '≤ 86.5，使用自动范围 [', xMin, ',', xMax, ']');
+  /** 轴最大值：余数 < 6.5 则 base+10，否则 base+20，且不超过 100 */
+  function axisMax(val: number): number {
+    const base = Math.floor(val / 10) * 10;
+    const remainder = val - base;
+    const max = remainder < 6.5 ? base + 10 : base + 20;
+    return Math.min(100, max);
   }
+  /** 轴最小值：四舍五入到 10 再退一档 10，不低于 0 */
+  function axisMin(val: number): number {
+    const rounded = Math.round(val / 10) * 10;
+    return Math.max(0, rounded - 10);
+  }
+
+  let xMin = axisMin(minXVal);
+  let yMin = axisMin(minYVal);
+  let xMax = axisMax(maxXVal);
+  let yMax = axisMax(maxYVal);
   
   // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
   const eps = 1e-6;
