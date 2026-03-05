@@ -216,6 +216,12 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
     base < 100 && base - val < 5 ? base + 10 : base;
   let xMax = Math.min(100, bump(baseXMax, maxXVal));
   let yMax = Math.min(100, bump(baseYMax, maxYVal));
+
+  // 特殊规则：如果 X 轴（需求趋势得分）整体偏高（最大值 > 87），统一拉到 [20, 100]，方便横向对比
+  if (maxXVal > 87) {
+    xMin = 20;
+    xMax = 100;
+  }
   
   // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
   const eps = 1e-6;
