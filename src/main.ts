@@ -225,6 +225,9 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   if (maxXVal > 86.5) {
     xMin = 20;
     xMax = 100;
+    console.log('📐 X轴：需求最大值', maxXVal.toFixed(1), '> 86.5，已固定 X 轴范围为 [20, 100]');
+  } else {
+    console.log('📐 X轴：需求最大值', maxXVal.toFixed(1), '≤ 86.5，使用自动范围 [', xMin, ',', xMax, ']');
   }
   
   // 防止 xMin===xMax 或 yMin===yMax 导致中轴线/四象限渲染异常（如筛选 50/100 时数据范围过窄）
