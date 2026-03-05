@@ -1,5 +1,9 @@
-// Version: 20260221-1 - 移除刷新主图逻辑，仅用直链；新构建后请全量覆盖部署并清缓存
+// Version: 20260304 - X轴需求>86.5 时固定 [20,100]；新构建后请全量覆盖部署并清缓存
 import { bitable, workspace, dashboard } from '@lark-base-open/js-sdk';
+
+// 启动时打出版本，便于确认是否加载到最新构建（若看到旧版本说明未重新部署 dist）
+const PLUGIN_BUILD = '20260304-x轴86.5';
+console.log('📦 气泡图插件 build:', PLUGIN_BUILD);
 import * as echarts from 'echarts';
 import '@lark-base-open/js-sdk/dist/style/dashboard.css';
 import './style.css';
@@ -217,8 +221,8 @@ function renderChart(data: any[], sizeFieldLabel: string = '利润空间得分',
   let xMax = Math.min(100, bump(baseXMax, maxXVal));
   let yMax = Math.min(100, bump(baseYMax, maxYVal));
 
-  // 特殊规则：如果 X 轴（需求趋势得分）整体偏高（最大值 > 87），统一拉到 [20, 100]，方便横向对比
-  if (maxXVal > 87) {
+  // 特殊规则：如果 X 轴（需求趋势得分）整体偏高（最大值 > 86.5），统一拉到 [20, 100]，方便横向对比
+  if (maxXVal > 86.5) {
     xMin = 20;
     xMax = 100;
   }
